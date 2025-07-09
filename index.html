@@ -66,9 +66,9 @@
     const container = document.getElementById('tweets-container');
 
     tweetLinks.forEach((url, index) => {
-      // 북마크 번호 타이틀 추가
+      // 북마크 타이틀 추가
       const title = document.createElement('h3');
-      title.textContent = `북마크${index + 1}`;
+      title.textContent = url;
       container.appendChild(title);
 
       // 트윗 임베드 블록 생성

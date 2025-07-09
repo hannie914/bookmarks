@@ -8,41 +8,16 @@
     blockquote.twitter-tweet {
       margin-bottom: 20px;
     }
-    .tweet-url {
-      font-size: 0.9rem;
-      color: #555;
-      margin-top: 20px;
-      margin-bottom: 5px;
-      word-break: break-all;
-      font-family: monospace;
-    }
-    #load-more-btn {
-      display: block;
-      margin: 30px auto;
-      padding: 10px 20px;
-      font-size: 1rem;
-      cursor: pointer;
-      border: 1px solid #1da1f2;
-      background-color: white;
-      color: #1da1f2;
-      border-radius: 5px;
-      transition: background-color 0.3s, color 0.3s;
-    }
-    #load-more-btn:hover {
-      background-color: #1da1f2;
-      color: white;
-    }
   </style>
 </head>
 <body>
   <h1>📌 북마크한 트윗</h1>
-
   <div id="tweets-container"></div>
-  <button id="load-more-btn">더 보기</button>
 
   <script async src="https://platform.twitter.com/widgets.js" charset="utf-8"></script>
   <script>
-    const tweetLinks = [
+    // x.com 주소 리스트
+    const rawLinks = [
       "https://x.com/ldoolsetnet/status/1942453291520246245",
       "https://x.com/bluesungology/status/1937470768725541024",
       "https://x.com/ldoolsetnet/status/1936986424773124294",
@@ -85,45 +60,30 @@
       "https://x.com/dellyy72/status/1832722979622699469"
     ];
 
+    // x.com → twitter.com 자동 변환
+    const tweetLinks = rawLinks.map(url => url.replace("https://x.com", "https://twitter.com"));
+
     const container = document.getElementById('tweets-container');
-    const loadMoreBtn = document.getElementById('load-more-btn');
 
-    const batchSize = 5;
-    let loadedCount = 0;
+    tweetLinks.forEach((url, index) => {
+      // 북마크 번호 타이틀 추가
+      const title = document.createElement('h3');
+      title.textContent = `북마크${index + 1}`;
+      container.appendChild(title);
 
-    function loadTweets(count) {
-      const end = Math.min(loadedCount + count, tweetLinks.length);
-      for(let i = loadedCount; i < end; i++) {
-        const urlText = document.createElement('div');
-        urlText.className = 'tweet-url';
-        urlText.textContent = tweetLinks[i];
-        container.appendChild(urlText);
+      // 트윗 임베드 블록 생성
+      const blockquote = document.createElement('blockquote');
+      blockquote.className = 'twitter-tweet';
 
-        const blockquote = document.createElement('blockquote');
-        blockquote.className = 'twitter-tweet';
-        const a = document.createElement('a');
-        a.href = tweetLinks[i];
-        blockquote.appendChild(a);
-        container.appendChild(blockquote);
-      }
-      loadedCount = end;
+      const a = document.createElement('a');
+      a.href = url;
 
-      if (window.twttr && window.twttr.ready) {
-        window.twttr.ready(() => {
-          window.twttr.widgets.load();
-        });
-      }
-
-      if (loadedCount >= tweetLinks.length) {
-        loadMoreBtn.style.display = 'none';
-      }
-    }
-
-    loadMoreBtn.addEventListener('click', () => {
-      loadTweets(batchSize);
+      blockquote.appendChild(a);
+      container.appendChild(blockquote);
     });
 
-    loadTweets(batchSize);
+    // 위젯 스크립트가 동적으로 생성된 블록 인식하도록 리로드
+    window.twttr && window.twttr.widgets.load();
   </script>
 </body>
 </html>

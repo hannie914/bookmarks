@@ -3,52 +3,64 @@
 <head>
   <meta charset="UTF-8" />
   <title>북마크한 트윗 미리보기</title>
+  <script async src="https://platform.twitter.com/widgets.js" charset="utf-8"></script>
   <style>
     blockquote.twitter-tweet {
-      max-width: 550px; /* 트윗 최대 너비 조정 */
+      max-width: 550px;
       margin-bottom: 20px;
     }
   </style>
 </head>
 <body>
   <h1>📌 북마크한 트윗</h1>
+<h3>북마크1</h3>
+<blockquote class="twitter-tweet"><a href="https://x.com/frecklesfelixeu/status/1942585069417517353"></a></blockquote>
 
-  <!-- 여기에 트윗 링크를 한 줄씩 넣으면 됩니다 -->
-  <div id="tweets-container"></div>
+<h3>북마크2</h3>
+<blockquote class="twitter-tweet"><a href="https://x.com/bluesungology/status/1942495576362254731"></a></blockquote>
 
-  <script async src="https://platform.twitter.com/widgets.js" charset="utf-8"></script>
-  <script>
-    // 예시 트윗 URL 리스트 (필요한 만큼 추가하세요)
-    const tweetLinks = [
-      "https://twitter.com/ldoolsetnet/status/1893272588639523060",
-      "https://twitter.com/ldoolsetnet/status/1862542487933657530",
-      "https://twitter.com/DDotoriiing/status/1675568388872241152",
-      "https://twitter.com/IN2128J/status/1862493894967021879",
-      "https://twitter.com/ari_91422/status/1891271195841921107",
-      //... 더 추가 가능
-    ];
+<h3>북마크3</h3>
+<blockquote class="twitter-tweet"><a href="https://x.com/i/status/1725846763008139502"></a></blockquote>
 
-    const container = document.getElementById('tweets-container');
+<h3>북마크4</h3>
+<blockquote class="twitter-tweet"><a href="https://x.com/knowgarlic/status/1941464848581394566"></a></blockquote>
 
-    tweetLinks.forEach((url, index) => {
-      // 북마크 번호 타이틀 추가
-      const title = document.createElement('h3');
-      title.textContent = `북마크${index + 1}`;
-      container.appendChild(title);
+<h3>북마크5</h3>
+<blockquote class="twitter-tweet"><a href="https://x.com/ari_91422/status/1882031357851041816"></a></blockquote>
 
-      // 트윗 임베드 블록 생성
-      const blockquote = document.createElement('blockquote');
-      blockquote.className = 'twitter-tweet';
+<h3>북마크6</h3>
+<blockquote class="twitter-tweet"><a href="https://x.com/corecourses/status/1940882835772264810"></a></blockquote>
 
-      const a = document.createElement('a');
-      a.href = url;
+<h3>북마크7</h3>
+<blockquote class="twitter-tweet"><a href="https://x.com/i/status/1940734433973489972"></a></blockquote>
 
-      blockquote.appendChild(a);
-      container.appendChild(blockquote);
-    });
+<h3>북마크8</h3>
+<blockquote class="twitter-tweet"><a href="https://x.com/ldoolsetnet/status/1940734433973489972"></a></blockquote>
 
-    // 위젯 스크립트가 동적으로 생성된 블록 인식하도록 리로드
-    window.twttr && window.twttr.widgets.load();
-  </script>
+<h3>북마크9</h3>
+<blockquote class="twitter-tweet"><a href="https://x.com/ldoolsetnet/status/1940730122035982820"></a></blockquote>
+
+<h3>북마크10</h3>
+<blockquote class="twitter-tweet"><a href="https://x.com/ldoolsetnet/status/1940398154274492636"></a></blockquote>
+
+<h3>북마크11</h3>
+<blockquote class="twitter-tweet"><a href="https://x.com/ldoolsetnet/status/1940372020887437650"></a></blockquote>
+
+<h3>북마크12</h3>
+<blockquote class="twitter-tweet"><a href="https://x.com/dxstty/status/1940369829669810639"></a></blockquote>
+
+<h3>북마크13</h3>
+<blockquote class="twitter-tweet"><a href="https://x.com/dxstty/status/1940373328075878532"></a></blockquote>
+
+<h3>북마크14</h3>
+<blockquote class="twitter-tweet"><a href="https://x.com/dxstty/status/1940369240214876319"></a></blockquote>
+
+<h3>북마크15</h3>
+<blockquote class="twitter-tweet"><a href="https://x.com/mrrrkz/status/1940369331025846500"></a></blockquote>
+
+<h3>북마크16</h3>
+<blockquote class="twitter-tweet"><a href="https://x.com/dxstty/status/1939955704959217768"></a></blockquote>
+
+
 </body>
 </html>

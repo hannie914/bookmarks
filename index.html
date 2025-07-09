@@ -8,36 +8,78 @@
       max-width: 550px; /* 트윗 최대 너비 조정 */
       margin-bottom: 20px;
     }
+    p.url-text {
+      font-size: 0.9rem;
+      color: #555;
+      word-break: break-all;
+      margin-top: 0;
+      margin-bottom: 5px;
+      font-family: monospace;
+    }
   </style>
 </head>
 <body>
   <h1>📌 북마크한 트윗</h1>
 
-  <!-- 트윗과 제목이 들어갈 컨테이너 -->
   <div id="tweets-container"></div>
 
   <script async src="https://platform.twitter.com/widgets.js" charset="utf-8"></script>
   <script>
-    // [제목, 트윗 URL] 형태로 쌍을 추가하세요!
-    // 새로운 북마크를 추가할 때는 이 배열 안에
-    // ["원하는 제목", "트윗 URL"] 형식으로 넣으면 됩니다.
-    const tweetData = [
-      ["북마크1", "https://twitter.com/ldoolsetnet/status/1893272588639523060"],
-      ["북마크2", "https://twitter.com/ldoolsetnet/status/1862542487933657530"],
-      ["북마크3", "https://twitter.com/DDotoriiing/status/1675568388872241152"],
-      // 여기에 추가할 트윗들을 계속 넣으세요
-      // ["새로운 제목", "새 트윗 URL"],
+    const tweetLinks = [
+      "https://x.com/ldoolsetnet/status/1942453291520246245",
+      "https://x.com/bluesungology/status/1937470768725541024",
+      "https://x.com/ldoolsetnet/status/1936986424773124294",
+      "https://x.com/ldoolsetnet/status/1935918853923692729",
+      "https://x.com/ldoolsetnet/status/1934826488916005020",
+      "https://x.com/ldoolsetnet/status/1933685485681209583",
+      "https://x.com/hamb0kka/status/1911713306219626930",
+      "https://x.com/ldoolsetnet/status/1932652080491266153",
+      "https://x.com/ldoolsetnet/status/1931626120270823763",
+      "https://x.com/ldoolsetnet/status/1931603113955254508",
+      "https://x.com/worldhamstar/status/1800501178834501950",
+      "https://x.com/ari_91422/status/1925960976278425677",
+      "https://x.com/ldoolsetnet/status/1921166925360447655",
+      "https://x.com/chika_091415/status/1917549403797348825",
+      "https://x.com/nyongkz/status/1896809940448395430",
+      "https://x.com/myIuvjone/status/1515629551132774403",
+      "https://x.com/binnilogy/status/1892650443366449285",
+      "https://x.com/worldhamstar/status/1892522474560168331",
+      "https://x.com/gyoja_stay/status/1884785512629805273",
+      "https://x.com/ldoolsetnet/status/1881952673089593639",
+      "https://x.com/gksw1tj_/status/1834197568332410917",
+      "https://x.com/hallofmiso/status/1865066625449476452",
+      "https://x.com/lqlO27E_1/status/1851624114118963375",
+      "https://x.com/i/status/1448515423754850306",
+      "https://x.com/iamliketeatea/status/1608736910557745153",
+      "https://x.com/i/status/1557331683627524096",
+      "https://x.com/q000914/status/1731468111596101693",
+      "https://x.com/_234914/status/1847867500417171458",
+      "https://x.com/DDotoriiing/status/1797662838892401068",
+      "https://x.com/i/status/1738519139852173683",
+      "https://x.com/hallofmiso/status/1870862942365012212",
+      "https://x.com/dxstty/status/1848730803347591200",
+      "https://x.com/nyongkz/status/1474990998321524747",
+      "https://x.com/i/status/1387739574797959171",
+      "https://x.com/hanniesdaddy/status/1869440313246523509",
+      "https://x.com/mang_sep9/status/1718571990041420035",
+      "https://x.com/daengjinnnn_/status/1474997133279625216",
+      "https://x.com/volcano_quokka/status/1844324691881886211",
+      "https://x.com/ari_91422/status/1726863164741169273",
+      "https://x.com/dellyy72/status/1832722979622699469"
     ];
 
     const container = document.getElementById('tweets-container');
 
-    tweetData.forEach(([titleText, url]) => {
-      // 제목 엘리먼트 생성 및 추가
+    tweetLinks.forEach((url, index) => {
       const title = document.createElement('h3');
-      title.textContent = titleText;
+      title.textContent = `북마크${index + 1}`;
       container.appendChild(title);
 
-      // 트윗 임베드 블록 생성 및 추가
+      const urlText = document.createElement('p');
+      urlText.textContent = url;
+      urlText.className = 'url-text';
+      container.appendChild(urlText);
+
       const blockquote = document.createElement('blockquote');
       blockquote.className = 'twitter-tweet';
 
@@ -48,7 +90,7 @@
       container.appendChild(blockquote);
     });
 
-    // 트위터 위젯 스크립트가 동적으로 생성된 블록 인식하도록 재실행
+    // 동적 로드 인식
     window.twttr && window.twttr.widgets.load();
   </script>
 </body>

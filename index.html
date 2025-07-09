@@ -5,8 +5,19 @@
   <title>북마크한 트윗 미리보기</title>
   <script async src="https://platform.twitter.com/widgets.js" charset="utf-8"></script>
   <style>
+    body {
+      font-family: sans-serif;
+      padding: 20px;
+    }
+    .tweet-url-text {
+      font-family: monospace;
+      color: #444;
+      margin-top: 20px;
+      margin-bottom: 5px;
+      word-break: break-word;
+    }
     blockquote.twitter-tweet {
-      margin-bottom: 20px;
+      margin-bottom: 40px;
     }
   </style>
 </head>
@@ -14,75 +25,62 @@
   <h1>📌 북마크한 트윗</h1>
   <div id="tweets-container"></div>
 
-  <script async src="https://platform.twitter.com/widgets.js" charset="utf-8"></script>
   <script>
-    // x.com 주소 리스트
     const rawLinks = [
-      "https://x.com/ldoolsetnet/status/1942453291520246245",
-      "https://x.com/bluesungology/status/1937470768725541024",
-      "https://x.com/ldoolsetnet/status/1936986424773124294",
-      "https://x.com/ldoolsetnet/status/1935918853923692729",
-      "https://x.com/ldoolsetnet/status/1934826488916005020",
-      "https://x.com/ldoolsetnet/status/1933685485681209583",
-      "https://x.com/hamb0kka/status/1911713306219626930",
-      "https://x.com/ldoolsetnet/status/1932652080491266153",
-      "https://x.com/ldoolsetnet/status/1931626120270823763",
-      "https://x.com/ldoolsetnet/status/1931603113955254508",
-      "https://x.com/worldhamstar/status/1800501178834501950",
-      "https://x.com/ari_91422/status/1925960976278425677",
-      "https://x.com/ldoolsetnet/status/1921166925360447655",
-      "https://x.com/chika_091415/status/1917549403797348825",
-      "https://x.com/nyongkz/status/1896809940448395430",
-      "https://x.com/myIuvjone/status/1515629551132774403",
-      "https://x.com/binnilogy/status/1892650443366449285",
-      "https://x.com/worldhamstar/status/1892522474560168331",
-      "https://x.com/gyoja_stay/status/1884785512629805273",
-      "https://x.com/ldoolsetnet/status/1881952673089593639",
-      "https://x.com/gksw1tj_/status/1834197568332410917",
-      "https://x.com/hallofmiso/status/1865066625449476452",
+      "https://x.com/ari_91422/status/1880041683116781967",
+      "https://x.com/q000914/status/1879877642440331268",
+      "https://x.com/ldoolsetnet/status/1879821237461155940",
+      "https://x.com/ldoolsetnet/status/1879049937457230326",
+      "https://x.com/nyongkz/status/1666292184851841025",
+      "https://x.com/nyongkz/status/1625412464111411200",
+      "https://x.com/IN2128J/status/1878342161286210045",
+      "https://x.com/ColorOfYouth325/status/1877980568442589287",
+      "https://x.com/ColorOfYouth325/status/1877980568442589287/video/1",
+      "https://x.com/q000914/status/1723962746927239256",
+      "https://x.com/smolsungies/status/1875550689197486591",
+      "https://x.com/or7lblblro/status/1874216858544726252",
+      "https://x.com/worldhamstar/status/1873942788020330529",
+      "https://x.com/worldhamstar/status/1793615053419331590",
+      "https://x.com/pointline_plane/status/1871908419130867934",
+      "https://x.com/q000914/status/1788925009593033152",
+      "https://x.com/lqlO27E_1/status/1869716734833528953",
+      "https://x.com/hangaeddong1025/status/1856628568878711213",
+      "https://x.com/yslcheol/status/1867390618017968639",
+      "https://x.com/i/status/1867390170514997745",
+      "https://x.com/worldhamstar/status/1867205614314905664",
+      "https://x.com/upsideusan98/status/1757958735673397676",
+      "https://x.com/nyongkz/status/1596151697407021057",
+      "https://x.com/q000914/status/1855583612231676221",
+      "https://x.com/_234914/status/1853418885099430122",
       "https://x.com/lqlO27E_1/status/1851624114118963375",
       "https://x.com/i/status/1448515423754850306",
-      "https://x.com/iamliketeatea/status/1608736910557745153",
-      "https://x.com/i/status/1557331683627524096",
-      "https://x.com/q000914/status/1731468111596101693",
-      "https://x.com/_234914/status/1847867500417171458",
-      "https://x.com/DDotoriiing/status/1797662838892401068",
-      "https://x.com/i/status/1738519139852173683",
-      "https://x.com/hallofmiso/status/1870862942365012212",
-      "https://x.com/dxstty/status/1848730803347591200",
-      "https://x.com/nyongkz/status/1474990998321524747",
-      "https://x.com/i/status/1387739574797959171",
-      "https://x.com/hanniesdaddy/status/1869440313246523509",
-      "https://x.com/mang_sep9/status/1718571990041420035",
-      "https://x.com/daengjinnnn_/status/1474997133279625216",
-      "https://x.com/volcano_quokka/status/1844324691881886211",
-      "https://x.com/ari_91422/status/1726863164741169273",
-      "https://x.com/dellyy72/status/1832722979622699469"
+      "https://x.com/httpsbahng/status/1826271814416552436",
+      "https://x.com/hansl914/status/1477981329547743235",
+      "https://x.com/quoknyang/status/1758536853479956583"
     ];
-
-    // x.com → twitter.com 자동 변환
-    const tweetLinks = rawLinks.map(url => url.replace("https://x.com", "https://twitter.com"));
 
     const container = document.getElementById('tweets-container');
 
-    tweetLinks.forEach((url, index) => {
-      // 북마크 타이틀 추가
-      const title = document.createElement('h3');
-      title.textContent = url;
-      container.appendChild(title);
+    rawLinks.forEach((xUrl) => {
+      const twitterUrl = xUrl.replace("https://x.com", "https://twitter.com");
 
-      // 트윗 임베드 블록 생성
+      // 텍스트로 x.com 주소 출력
+      const urlTextDiv = document.createElement('div');
+      urlTextDiv.className = 'tweet-url-text';
+      urlTextDiv.textContent = xUrl;
+      container.appendChild(urlTextDiv);
+
+      // 트윗 임베드
       const blockquote = document.createElement('blockquote');
       blockquote.className = 'twitter-tweet';
 
       const a = document.createElement('a');
-      a.href = url;
+      a.href = twitterUrl;
 
       blockquote.appendChild(a);
       container.appendChild(blockquote);
     });
 
-    // 위젯 스크립트가 동적으로 생성된 블록 인식하도록 리로드
     window.twttr && window.twttr.widgets.load();
   </script>
 </body>

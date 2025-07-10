@@ -14,53 +14,61 @@
   <h1>📌 북마크한 트윗</h1>
   <div id="tweets-container"></div>
 
+  <script async src="https://platform.twitter.com/widgets.js" charset="utf-8"></script>
   <script>
     // x.com 주소 리스트
     const rawLinks = [
-      "https://x.com/hamb0kka/status/1907012138981613729",
-      "https://x.com/NYLONJAPAN/status/1906997519567274058",
-      "https://x.com/hangaeddong1025/status/1906995393860354477",
-      "https://x.com/dxstty/status/1906991339226493343",
-      "https://x.com/han9oo/status/1906153901029806515",
-      "https://x.com/i/status/1905962630331715889",
-      "https://x.com/skybound99/status/1906092156718395892",
-      "https://x.com/_234914/status/1806169563060686987",
-      "https://x.com/i/status/1806169202778333646",
-      "https://x.com/hangaeddong1025/status/1905990678535893210",
-      "https://x.com/hampongS2/status/1730271324860457224",
-      "https://x.com/hangaeddong1025/status/1905963112119034184",
-      "https://x.com/ldoolsetnet/status/1905945271315677405",
-      "https://x.com/ldoolsetnet/status/1905944747631313180",
-      "https://x.com/worldhamstar/status/1905942580258545887",
-      "https://x.com/dxstty/status/1905939405803499559",
-      "https://x.com/hangaeddong1025/status/1905938437049581643",
-      "https://x.com/_linosgrl/status/1905796234066981029",
-      "https://x.com/_234914/status/1905786086099743230",
-      "https://x.com/i/status/1905784887782805927",
-      "https://x.com/cloudbbok/status/1905781347546989022",
-      "https://x.com/hangaeddong1025/status/1905769809704571251",
-      "https://x.com/i/status/1905769478287392805",
-      "https://x.com/plum__country/status/1831037845781594306",
-      "https://x.com/hamb0kka/status/1904497559240057050",
-      "https://x.com/dxstty/status/1902323644786692485",
-      "https://x.com/ldoolsetnet/status/1900506584653984246",
-      "https://x.com/ldoolsetnet/status/1904497048407167229",
-      "https://x.com/hamb0kka/status/1902321198299828383",
-      "https://x.com/Han_hamquoka/status/1900419415889555465",
-      "https://x.com/nyongkz/status/1904494388429848644",
-      "https://x.com/ldoolsetnet/status/1902320769277030528",
-      "https://x.com/hamb0kka/status/1732989612417769767",
-      "https://x.com/dxstty/status/1749431237272592711",
+      "https://x.com/rpjlchmjl/status/1866134860575756328",
+      "https://x.com/ColorOfYouth325/status/1679798306644586497",
+      "https://x.com/hanniesdaddy/status/1865780612566602199",
+      "https://x.com/ssissiham/status/1865776060836831587",
+      "https://x.com/5starkids_/status/1579107696628109312",
+      "https://x.com/i/status/1578599518287036416",
+      "https://x.com/lqlO27E_1/status/1851624114118963375",
+      "https://x.com/i/status/1448515423754850306",
+      "https://x.com/hamb0kka/status/1905510570998255869",
+      "https://x.com/staysday6/status/1905486638794637340",
+      "https://x.com/smolsungies/status/1905489753568604237",
+      "https://x.com/smolsungies/status/1905447528017047749",
+      "https://x.com/myliinou/status/1905407844532318390",
+      "https://x.com/doolsetlvet/status/1905300040513716491",
+      "https://x.com/onlybinsung__/status/1904034998174507381",
+      "https://x.com/i/status/1904023204991324233",
+      "https://x.com/hamb0kka/status/1904694543548833916",
+      "https://x.com/dxstty/status/1904681014921769467",
+      "https://x.com/nyongkz/status/1904678063994265879",
+      "https://x.com/nyongkz/status/1904677308272959780",
+      "https://x.com/hangaeddong1025/status/1904672918237569276",
+      "https://x.com/nyongkz/status/1904672876965617763",
+      "https://x.com/ldoolsetnet/status/1904671706553475460",
+      "https://x.com/DDotoriiing/status/1904508160351846687",
+      "https://x.com/ldoolsetnet/status/1904497595902484550",
+      "https://x.com/hamb0kka/status/1904492919425474632",
+      "https://x.com/nyongkz/status/1904492728983183394",
+      "https://x.com/nyongkz/status/1904490343720247323",
+      "https://x.com/nyongkz/status/1904489944263045400",
       "https://x.com/ldoolsetnet/status/1897262188974510192",
-      "https://x.com/dxstty/status/1749430355172503933",
-      "https://x.com/i/status/1349611872421482498",
+      "https://x.com/ldoolsetnet/status/1902320769277030528",
       "https://x.com/cprfms/status/1550279356596924416",
       "https://x.com/dooleebit/status/1896917104827490411",
-      "https://x.com/dkwlrahffk/status/1479458468335853568",
-      "https://x.com/nyongkz/status/1904494127250829536",
       "https://x.com/hampongS2/status/1902318089368432707",
       "https://x.com/saida091425/status/1899625770609422594",
       "https://x.com/nyongkz/status/1896884995509338560",
+      "https://x.com/ldoolsetnet/status/1902317967616176487",
+      "https://x.com/worldhamstar/status/1899493354297327749",
+      "https://x.com/nyongkz/status/1896883594095927454",
+      "https://x.com/ldoolsetnet/status/1902317665810526317",
+      "https://x.com/worldhamstar/status/1899492521472049475",
+      "https://x.com/ldoolsetnet/status/1896881142265221282",
+      "https://x.com/hamb0kka/status/1902317254571913526",
+      "https://x.com/hamb0kka/status/1899418249743511793",
+      "https://x.com/ldoolsetnet/status/1896879808094814334",
+      "https://x.com/ldoolsetnet/status/1902315658584441149",
+      "https://x.com/nyongkz/status/1899418210820354187",
+      "https://x.com/ldoolsetnet/status/1896878903257661630",
+      "https://x.com/dxstty/status/1749430355172503933",
+      "https://x.com/i/status/1349611872421482498",
+      "https://x.com/dkwlrahffk/status/1479458468335853568",
       "https://x.com/hangaeddong1025/status/1895821832181465402"
     ];
 
@@ -69,7 +77,12 @@
 
     const container = document.getElementById('tweets-container');
 
-    tweetLinks.forEach((url) => {
+    tweetLinks.forEach((url, index) => {
+      // 북마크 타이틀 추가
+      const title = document.createElement('h3');
+      title.textContent = url;
+      container.appendChild(title);
+
       // 트윗 임베드 블록 생성
       const blockquote = document.createElement('blockquote');
       blockquote.className = 'twitter-tweet';

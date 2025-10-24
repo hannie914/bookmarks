@@ -1,101 +1,327 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ko">
 <head>
-  <meta charset="UTF-8" />
-  <title>북마크한 트윗 미리보기</title>
-  <script async src="https://platform.twitter.com/widgets.js" charset="utf-8"></script>
-  <style>
-    blockquote.twitter-tweet {
-      margin-bottom: 20px;
-    }
-  </style>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>트윗 보관함 — 미리보기 + 검색/태그</title>
+
+<!-- X(Twitter) 공식 위젯: 임베드 렌더링 -->
+<script async src="https://platform.twitter.com/widgets.js"></script>
+
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1b1f23;
+    --muted: #6a737d;
+    --card: #ffffff;
+    --border: #eaecef;
+    --chip: #f1f8ff;
+    --chip-fg: #0366d6;
+  }
+  [data-theme="dark"] {
+    --bg: #0d1117;
+    --fg: #c9d1d9;
+    --muted: #8b949e;
+    --card: #161b22;
+    --border: #30363d;
+    --chip: #13233a;
+    --chip-fg: #58a6ff;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Apple SD Gothic Neo, Noto Sans KR, sans-serif;
+    background: var(--bg); color: var(--fg);
+  }
+  header {
+    position: sticky; top: 0; z-index: 20;
+    backdrop-filter: blur(8px);
+    background: color-mix(in oklab, var(--bg) 92%, transparent);
+    border-bottom: 1px solid var(--border);
+  }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 16px; }
+  .row { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; }
+  @media (max-width: 860px) { .row { grid-template-columns: 1fr; } }
+  h1 { margin: 0 0 8px 0; font-size: 18px; }
+  .sub { font-size: 12px; color: var(--muted); }
+
+  textarea, input, select {
+    width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px;
+    background: var(--card); color: var(--fg);
+  }
+  button {
+    padding: 10px 14px; border: 1px solid var(--border); border-radius: 10px;
+    background: var(--card); color: var(--fg); cursor: pointer;
+  }
+  button:hover { filter: brightness(1.03); }
+
+  .controls { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .muted { color: var(--muted); font-size: 12px; }
+  .count { margin-left: auto; }
+
+  .chips { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+  .chip {
+    background: var(--chip); color: var(--chip-fg); border: 1px solid var(--border);
+    padding: 6px 10px; border-radius: 999px; font-size: 12px; cursor: pointer;
+  }
+  .chip.active { outline: 2px solid var(--chip-fg); }
+
+  main .wrap { padding-top: 8px; }
+  #grid {
+    display: grid; gap: 16px; margin: 16px 0 40px;
+    grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+  }
+  .card {
+    border: 1px solid var(--border); border-radius: 14px; background: var(--card);
+    padding: 12px; display: flex; flex-direction: column; gap: 8px;
+  }
+  .meta { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; font-size: 12px; color: var(--muted); }
+  .line { display: flex; gap: 8px; align-items: center; }
+  .line input { flex: 1; }
+  .actions { display: flex; gap: 8px; margin-left: auto; }
+  .link { font-size: 12px; color: var(--muted); text-decoration: none; word-break: break-all; }
+  .footer { display: flex; gap: 8px; align-items: center; justify-content: space-between; }
+  .switch { display: inline-flex; align-items: center; gap:6px; font-size:12px; color: var(--muted); }
+  .help { font-size:12px; color: var(--muted); }
+  .kbd { border:1px solid var(--border); border-bottom-width:2px; border-radius:6px; padding:2px 6px; font-family:ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+  /* 트윗 임베드 다크모드 대응 */
+  [data-theme="dark"] .twitter-tweet-rendered { filter: brightness(0.92); }
+</style>
 </head>
 <body>
-  <h1>📌 북마크한 트윗</h1>
-  <div id="tweets-container"></div>
 
-  <script async src="https://platform.twitter.com/widgets.js" charset="utf-8"></script>
-  <script>
-    // x.com 주소 리스트
-    const rawLinks = [
-      "https://x.com/rpjlchmjl/status/1866134860575756328",
-      "https://x.com/ColorOfYouth325/status/1679798306644586497",
-      "https://x.com/hanniesdaddy/status/1865780612566602199",
-      "https://x.com/ssissiham/status/1865776060836831587",
-      "https://x.com/5starkids_/status/1579107696628109312",
-      "https://x.com/i/status/1578599518287036416",
-      "https://x.com/lqlO27E_1/status/1851624114118963375",
-      "https://x.com/i/status/1448515423754850306",
-      "https://x.com/hamb0kka/status/1905510570998255869",
-      "https://x.com/staysday6/status/1905486638794637340",
-      "https://x.com/smolsungies/status/1905489753568604237",
-      "https://x.com/smolsungies/status/1905447528017047749",
-      "https://x.com/myliinou/status/1905407844532318390",
-      "https://x.com/doolsetlvet/status/1905300040513716491",
-      "https://x.com/onlybinsung__/status/1904034998174507381",
-      "https://x.com/i/status/1904023204991324233",
-      "https://x.com/hamb0kka/status/1904694543548833916",
-      "https://x.com/dxstty/status/1904681014921769467",
-      "https://x.com/nyongkz/status/1904678063994265879",
-      "https://x.com/nyongkz/status/1904677308272959780",
-      "https://x.com/hangaeddong1025/status/1904672918237569276",
-      "https://x.com/nyongkz/status/1904672876965617763",
-      "https://x.com/ldoolsetnet/status/1904671706553475460",
-      "https://x.com/DDotoriiing/status/1904508160351846687",
-      "https://x.com/ldoolsetnet/status/1904497595902484550",
-      "https://x.com/hamb0kka/status/1904492919425474632",
-      "https://x.com/nyongkz/status/1904492728983183394",
-      "https://x.com/nyongkz/status/1904490343720247323",
-      "https://x.com/nyongkz/status/1904489944263045400",
-      "https://x.com/ldoolsetnet/status/1897262188974510192",
-      "https://x.com/ldoolsetnet/status/1902320769277030528",
-      "https://x.com/cprfms/status/1550279356596924416",
-      "https://x.com/dooleebit/status/1896917104827490411",
-      "https://x.com/hampongS2/status/1902318089368432707",
-      "https://x.com/saida091425/status/1899625770609422594",
-      "https://x.com/nyongkz/status/1896884995509338560",
-      "https://x.com/ldoolsetnet/status/1902317967616176487",
-      "https://x.com/worldhamstar/status/1899493354297327749",
-      "https://x.com/nyongkz/status/1896883594095927454",
-      "https://x.com/ldoolsetnet/status/1902317665810526317",
-      "https://x.com/worldhamstar/status/1899492521472049475",
-      "https://x.com/ldoolsetnet/status/1896881142265221282",
-      "https://x.com/hamb0kka/status/1902317254571913526",
-      "https://x.com/hamb0kka/status/1899418249743511793",
-      "https://x.com/ldoolsetnet/status/1896879808094814334",
-      "https://x.com/ldoolsetnet/status/1902315658584441149",
-      "https://x.com/nyongkz/status/1899418210820354187",
-      "https://x.com/ldoolsetnet/status/1896878903257661630",
-      "https://x.com/dxstty/status/1749430355172503933",
-      "https://x.com/i/status/1349611872421482498",
-      "https://x.com/dkwlrahffk/status/1479458468335853568",
-      "https://x.com/hangaeddong1025/status/1895821832181465402"
-    ];
+<header>
+  <div class="wrap">
+    <h1>트윗 보관함 <span class="sub">미리보기 + 검색/태그 + 로컬 저장</span></h1>
+    <div class="row">
+      <div>
+        <div class="sub">한 줄에 하나씩 <b>트윗 URL</b>을 넣으세요. 같은 줄에 <code>#태그</code>와 <code>| 메모</code>도 쓸 수 있어요.</div>
+        <textarea id="bulk" placeholder="예)
+https://twitter.com/nasa/status/123... #우주 #사진 | 허블 텍스트
+https://x.com/someone/status/456... #정책 | 개인 메모"></textarea>
+        <div class="controls" style="margin-top:8px">
+          <button id="importBtn">가져오기</button>
+          <button id="clearInput">입력창 비우기</button>
+          <span class="muted">중복 URL은 자동으로 건너뜁니다.</span>
+        </div>
+      </div>
+      <div>
+        <div class="sub">검색( URL / #태그 / 메모 )</div>
+        <input id="q" placeholder="#우주 또는 메모 단어 등" />
+        <div class="controls" style="margin-top:8px">
+          <div class="switch">
+            <input type="checkbox" id="darkToggle" />
+            <label for="darkToggle">다크모드</label>
+          </div>
+          <span class="count muted" id="count"></span>
+        </div>
+        <div class="controls" style="margin-top:6px">
+          <button id="exportBtn">백업 내보내기(JSON)</button>
+          <button id="importJsonBtn">백업 불러오기</button>
+          <input type="file" id="fileInput" accept="application/json" style="display:none" />
+        </div>
+        <div class="help" style="margin-top:6px">
+          <span class="kbd">Tip</span> 태그 칩을 클릭하면 해당 태그로 즉시 필터됩니다.
+        </div>
+      </div>
+    </div>
+    <div id="tagChips" class="chips"></div>
+  </div>
+</header>
 
-    // x.com → twitter.com 자동 변환
-    const tweetLinks = rawLinks.map(url => url.replace("https://x.com", "https://twitter.com"));
+<main>
+  <div class="wrap">
+    <div id="grid"></div>
+  </div>
+</main>
 
-    const container = document.getElementById('tweets-container');
+<script>
+(() => {
+  const $ = (s, d=document)=>d.querySelector(s);
+  const $$ = (s, d=document)=>Array.from(d.querySelectorAll(s));
+  const LS_KEY = 'tweet-shelf-v2';
+  const normalize = (url) => {
+    try { const u = new URL(url.trim()); if (u.hostname === 'x.com') u.hostname = 'twitter.com'; return u.toString(); }
+    catch { return url.trim(); }
+  };
+  const parseLine = (line) => {
+    const urlMatch = line.match(/https?:\/\/(twitter\.com|x\.com)\/\S+/i);
+    if (!urlMatch) return null;
+    const url = normalize(urlMatch[0]);
+    const tags = (line.match(/#[^\s#|]+/g)||[]).map(s=>s.toLowerCase());
+    const note = line.includes('|') ? line.split('|').slice(1).join('|').trim() : '';
+    return { url, tags, note };
+  };
+  const load = () => { try { return JSON.parse(localStorage.getItem(LS_KEY)||'[]'); } catch { return []; } };
+  const save = (arr) => localStorage.setItem(LS_KEY, JSON.stringify(arr));
 
-    tweetLinks.forEach((url, index) => {
-      // 북마크 타이틀 추가
-      const title = document.createElement('h3');
-      title.textContent = url;
-      container.appendChild(title);
+  const state = {
+    items: load(),    // {url, tags:[], note}
+    theme: localStorage.getItem('theme') || 'light',
+    activeTag: null
+  };
 
-      // 트윗 임베드 블록 생성
-      const blockquote = document.createElement('blockquote');
-      blockquote.className = 'twitter-tweet';
+  // THEME
+  const applyTheme = () => { document.documentElement.setAttribute('data-theme', state.theme); $('#darkToggle').checked = state.theme === 'dark'; };
+  $('#darkToggle')?.addEventListener('change', (e)=>{ state.theme = e.target.checked ? 'dark' : 'light'; localStorage.setItem('theme', state.theme); applyTheme(); });
+  applyTheme();
 
-      const a = document.createElement('a');
-      a.href = url;
-
-      blockquote.appendChild(a);
-      container.appendChild(blockquote);
+  // RENDER HELPERS
+  const renderCount = () => { $('#count').textContent = `${state.items.length}개 저장됨`; };
+  const uniqueTags = () => {
+    const set = new Set();
+    state.items.forEach(it => (it.tags||[]).forEach(t => set.add(t)));
+    return Array.from(set).sort((a,b)=>a.localeCompare(b));
+  };
+  const renderTagChips = () => {
+    const chips = uniqueTags();
+    const box = $('#tagChips'); box.innerHTML = '';
+    if (!chips.length) return;
+    // "전체" 칩
+    const all = document.createElement('button');
+    all.className = 'chip' + (!state.activeTag ? ' active' : '');
+    all.textContent = '전체';
+    all.addEventListener('click', ()=>{ state.activeTag = null; filterAndRender(); });
+    box.appendChild(all);
+    // 각 태그 칩
+    chips.forEach(tag => {
+      const el = document.createElement('button');
+      el.className = 'chip' + (state.activeTag === tag ? ' active' : '');
+      el.textContent = tag;
+      el.addEventListener('click', ()=>{ state.activeTag = (state.activeTag===tag?null:tag); filterAndRender(); });
+      box.appendChild(el);
     });
+  };
 
-    // 위젯 스크립트가 동적으로 생성된 블록 인식하도록 리로드
-    window.twttr && window.twttr.widgets.load();
-  </script>
+  const cardHTML = (item, idx) => {
+    const tagText = (item.tags||[]).join(' ');
+    return `
+      <article class="card" data-idx="${idx}" data-url="${item.url}" data-tags="${tagText}" data-note="${item.note||''}">
+        <div class="meta">
+          <span>${tagText || '태그 없음'}</span>
+          ${item.note ? `<span>· ${item.note}</span>` : ``}
+        </div>
+        <div class="embed"><blockquote class="twitter-tweet"><a href="${item.url}"></a></blockquote></div>
+        <div class="line">
+          <input class="tags" placeholder="#태그 공백구분" value="${tagText}" />
+        </div>
+        <div class="line">
+          <input class="note" placeholder="메모" value="${item.note||''}" />
+        </div>
+        <div class="footer">
+          <a class="link" href="${item.url}" target="_blank" rel="noopener">${item.url}</a>
+          <div class="actions">
+            <button class="save">저장</button>
+            <button class="del">삭제</button>
+          </div>
+        </div>
+      </article>
+    `;
+  };
+
+  const render = () => {
+    $('#grid').innerHTML = state.items.map((it,i)=>cardHTML(it,i)).join('');
+    // 트윗 렌더
+    const loadWidgets = () => {
+      if (window.twttr && window.twttr.widgets) window.twttr.widgets.load($('#grid'));
+      else setTimeout(loadWidgets, 200);
+    };
+    loadWidgets();
+    renderCount();
+    renderTagChips();
+
+    // 이벤트 바인딩
+    $$('.card').forEach(card => {
+      card.querySelector('.save').addEventListener('click', () => {
+        const idx = +card.dataset.idx;
+        const tags = card.querySelector('.tags').value.trim().split(/\s+/).filter(Boolean);
+        const note = card.querySelector('.note').value.trim();
+        state.items[idx].tags = tags.map(s=>s.startsWith('#')?s.toLowerCase():('#'+s.toLowerCase()));
+        state.items[idx].note = note;
+        save(state.items);
+        render();
+        filterAndRender(); // 필터 유지
+      });
+      card.querySelector('.del').addEventListener('click', () => {
+        const idx = +card.dataset.idx;
+        if (!confirm('이 카드를 삭제할까요?')) return;
+        state.items.splice(idx,1);
+        save(state.items);
+        render();
+        filterAndRender();
+      });
+    });
+  };
+
+  const filterAndRender = () => {
+    render();
+    const q = ($('#q').value||'').toLowerCase().trim();
+    const active = state.activeTag;
+    $$('.card').forEach(c => {
+      const hay = [c.dataset.url, c.dataset.tags, c.dataset.note].join(' ').toLowerCase();
+      const qok = !q || hay.includes(q);
+      const tok = !active || (c.dataset.tags.toLowerCase().split(/\s+/).includes(active));
+      c.style.display = (qok && tok) ? '' : 'none';
+    });
+    // 칩 재하이라이트
+    renderTagChips();
+  };
+
+  // 초기 렌더
+  render();
+
+  // 입력창 동작
+  $('#importBtn').addEventListener('click', () => {
+    const lines = $('#bulk').value.split('\n').map(s=>s.trim()).filter(Boolean);
+    const newOnes = [];
+    for (const line of lines) {
+      const parsed = parseLine(line);
+      if (!parsed) continue;
+      if (state.items.some(x=>x.url===parsed.url)) continue; // 중복 방지
+      newOnes.push(parsed);
+    }
+    if (!newOnes.length) { alert('추가할 URL이 없습니다.'); return; }
+    state.items = [...newOnes, ...state.items];
+    save(state.items);
+    $('#bulk').value = '';
+    filterAndRender();
+  });
+
+  $('#clearInput').addEventListener('click', ()=> $('#bulk').value = '');
+  $('#q').addEventListener('input', filterAndRender);
+
+  // 백업/복원
+  $('#exportBtn').addEventListener('click', () => {
+    const blob = new Blob([JSON.stringify(state.items, null, 2)], {type:'application/json'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = 'tweet-shelf-backup.json'; a.click();
+    URL.revokeObjectURL(url);
+  });
+  $('#importJsonBtn').addEventListener('click', ()=> $('#fileInput').click());
+  $('#fileInput').addEventListener('change', (e) => {
+    const file = e.target.files?.[0]; if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const arr = JSON.parse(reader.result);
+        if (!Array.isArray(arr)) throw new Error('형식 오류');
+        // url 필수만 확인
+        const cleaned = arr.filter(x => x && typeof x.url === 'string').map(x => ({
+          url: normalize(x.url),
+          tags: Array.isArray(x.tags) ? x.tags.map(t=>t.toLowerCase()) : [],
+          note: typeof x.note === 'string' ? x.note : ''
+        }));
+        state.items = cleaned;
+        save(state.items);
+        filterAndRender();
+      } catch {
+        alert('JSON 형식이 올바르지 않습니다.');
+      }
+    };
+    reader.readAsText(file, 'utf-8');
+    e.target.value = '';
+  });
+})();
+</script>
 </body>
 </html>

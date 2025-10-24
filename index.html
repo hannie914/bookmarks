@@ -4,13 +4,18 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>트윗 보관함 — 미리보기 + 검색/태그 + 동기화 + 페이징</title>
+
+<!-- X(Twitter) 공식 위젯: 임베드 렌더링 -->
 <script async src="https://platform.twitter.com/widgets.js"></script>
+
 <style>
   :root {
-    --bg:#fff; --fg:#1b1f23; --muted:#6a737d; --card:#fff; --border:#eaecef; --chip:#f1f8ff; --chip-fg:#0366d6; --accent:#0366d6;
+    --bg:#fff; --fg:#1b1f23; --muted:#6a737d; --card:#fff; --border:#eaecef;
+    --chip:#f1f8ff; --chip-fg:#0366d6; --accent:#0366d6;
   }
   [data-theme="dark"] {
-    --bg:#0d1117; --fg:#c9d1d9; --muted:#8b949e; --card:#161b22; --border:#30363d; --chip:#13233a; --chip-fg:#58a6ff; --accent:#58a6ff;
+    --bg:#0d1117; --fg:#c9d1d9; --muted:#8b949e; --card:#161b22; --border:#30363d;
+    --chip:#13233a; --chip-fg:#58a6ff; --accent:#58a6ff;
   }
   *{box-sizing:border-box}
   body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Apple SD Gothic Neo,Noto Sans KR,sans-serif;background:var(--bg);color:var(--fg)}
@@ -39,18 +44,21 @@
   .switch{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}
   .kbd{border:1px solid var(--border);border-bottom-width:2px;border-radius:6px;padding:2px 6px;font-family:ui-monospace,monospace}
   [data-theme="dark"] .twitter-tweet-rendered{filter:brightness(0.92)}
+
   /* 설정 모달 */
   .modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.4);display:none;align-items:center;justify-content:center;z-index:50}
   .modal{background:var(--card);border:1px solid var(--border);border-radius:12px;max-width:520px;width:92%;padding:16px}
   .modal h2{margin:0 0 8px;font-size:16px}
   .modal .desc{font-size:12px;color:var(--muted);margin-bottom:8px}
-  .modal .row{grid-template-columns:1fr}
+  .modal .row{display:grid;grid-template-columns:1fr;gap:10px}
+
   /* 페이징 바 */
   .pagingbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end;margin-top:8px}
   .pagingbar .muted{white-space:nowrap}
 </style>
 </head>
 <body>
+
 <header>
   <div class="wrap">
     <h1>트윗 보관함 <span class="sub">미리보기 + 검색/태그 + <b>클라우드 동기화</b> + <b>페이징</b></span></h1>
@@ -82,4 +90,371 @@ https://x.com/someone/status/456... #정책 | 개인 메모"></textarea>
           <button id="cloudPush">클라우드로 업로드</button>
           <button id="exportBtn">백업 내보내기(JSON)</button>
           <button id="importJsonBtn">백업 불러오기</button>
-          <input type="file" id="fileInput" accept="app
+          <input type="file" id="fileInput" accept="application/json" style="display:none" />
+        </div>
+        <div class="controls" style="margin-top:6px">
+          <div class="sub">표시 개수</div>
+          <select id="pageSize">
+            <option>6</option><option>9</option><option selected>12</option>
+            <option>18</option><option>24</option><option>36</option>
+          </select>
+          <div class="pagingbar">
+            <button id="firstPage">처음</button>
+            <button id="prevPage">이전</button>
+            <button id="nextPage">다음</button>
+            <button id="lastPage">마지막</button>
+            <span class="sub" id="pageInfo"></span>
+          </div>
+        </div>
+        <div class="sub" style="margin-top:6px">
+          <span class="kbd">Tip</span> 태그 칩 클릭 → 해당 태그만 보기. <b>‘태그 없음’</b> 칩으로 무태그만 보기.
+        </div>
+      </div>
+    </div>
+    <div id="tagChips" class="chips"></div>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+    <div id="grid"></div>
+  </div>
+</main>
+
+<!-- 설정 모달 -->
+<div class="modal-backdrop" id="modalWrap">
+  <div class="modal">
+    <h2>동기화 설정</h2>
+    <div class="desc">GitHub에서 <b>gist: read & write</b> 권한 토큰을 만들고, 비공개 Gist의 <b>ID</b>를 넣어 주세요. 입력값은 이 브라우저에만 저장됩니다.</div>
+    <div class="row">
+      <div>
+        <label class="sub">GitHub Personal Access Token</label>
+        <input id="tokenInput" placeholder="ghp_... 또는 fine-grained token" />
+      </div>
+      <div>
+        <label class="sub">Gist ID</label>
+        <input id="gistInput" placeholder="예: abcdef1234567890..." />
+      </div>
+      <div class="controls" style="margin-top:10px">
+        <button id="saveSettings" style="border-color:var(--accent);color:var(--accent)">저장</button>
+        <button id="closeSettings">닫기</button>
+        <span class="sub" id="settingsStatus"></span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ===== 공통 유틸 ===== */
+const $ = (s,d=document)=>d.querySelector(s);
+const $$ = (s,d=document)=>Array.from(d.querySelectorAll(s));
+const LS_KEY = 'tweet-shelf-v4';
+const CFG_TOKEN = 'tweet-shelf-token';
+const CFG_GIST = 'tweet-shelf-gist';
+const LS_PAGE_SIZE = 'tweet-shelf-pageSize';
+const UNTAGGED = '__UNTAGGED__';
+
+const normalize = (url) => {
+  try { const u=new URL(url.trim()); if(u.hostname==='x.com') u.hostname='twitter.com'; return u.toString(); }
+  catch { return url.trim(); }
+};
+const parseLine = (line) => {
+  const urlMatch=line.match(/https?:\/\/(twitter\.com|x\.com)\/\S+/i);
+  if(!urlMatch) return null;
+  const url=normalize(urlMatch[0]);
+  const tags=(line.match(/#[^\s#|]+/g)||[]).map(s=>s.toLowerCase());
+  const note=line.includes('|')?line.split('|').slice(1).join('|').trim():'';
+  return { url, tags, note };
+};
+const loadLocal = () => { try { return JSON.parse(localStorage.getItem(LS_KEY)||'[]'); } catch { return []; } };
+const saveLocal = (arr) => localStorage.setItem(LS_KEY, JSON.stringify(arr));
+
+/* ===== 상태 ===== */
+const state = {
+  items: loadLocal(),
+  theme: localStorage.getItem('theme') || 'light',
+  activeTag: null,              // null | 태그 | UNTAGGED
+  token: localStorage.getItem(CFG_TOKEN) || '',
+  gistId: localStorage.getItem(CFG_GIST) || '',
+  page: 1,
+  pageSize: +(localStorage.getItem(LS_PAGE_SIZE) || 12),
+  filteredCache: []
+};
+
+/* ===== 테마 ===== */
+function applyTheme(){
+  document.documentElement.setAttribute('data-theme', state.theme);
+  const t = $('#darkToggle'); if (t) t.checked = state.theme==='dark';
+}
+
+/* ===== 태그 ===== */
+function uniqueTags(){
+  const set=new Set();
+  state.items.forEach(it => (it.tags||[]).forEach(t=>set.add(t)));
+  return Array.from(set).sort((a,b)=>a.localeCompare(b));
+}
+function renderTagChips(){
+  const chips=uniqueTags();
+  const box=$('#tagChips'); if(!box) return;
+  box.innerHTML='';
+  // 전체
+  const all=document.createElement('button');
+  all.className='chip'+(!state.activeTag?' active':'');
+  all.textContent='전체';
+  all.addEventListener('click', ()=>{ state.activeTag=null; state.page=1; filterAndRender(); });
+  box.appendChild(all);
+  // 태그 없음
+  const none=document.createElement('button');
+  none.className='chip'+(state.activeTag===UNTAGGED?' active':'');
+  none.textContent='태그 없음';
+  none.addEventListener('click', ()=>{ state.activeTag=(state.activeTag===UNTAGGED?null:UNTAGGED); state.page=1; filterAndRender(); });
+  box.appendChild(none);
+  // 실제 태그들
+  chips.forEach(tag=>{
+    const el=document.createElement('button');
+    el.className='chip'+(state.activeTag===tag?' active':'');
+    el.textContent=tag;
+    el.addEventListener('click', ()=>{ state.activeTag=(state.activeTag===tag?null:tag); state.page=1; filterAndRender(); });
+    box.appendChild(el);
+  });
+}
+
+/* ===== 렌더 ===== */
+function renderCount(total, from, to, page, totalPages){
+  const c=$('#count'), p=$('#pageInfo');
+  if(c) c.textContent=`총 ${total}개`;
+  if(p) p.textContent= total ? `· ${page}/${totalPages} · ${from}–${to}` : '';
+}
+function cardHTML(item, idx){
+  const tagText=(item.tags||[]).join(' ');
+  return `
+    <article class="card" data-idx="${idx}" data-url="${item.url}" data-tags="${tagText}" data-note="${item.note||''}">
+      <div class="meta"><span>${tagText || '태그 없음'}</span>${item.note?`<span>· ${item.note}</span>`:''}</div>
+      <div class="embed"><blockquote class="twitter-tweet"><a href="${item.url}"></a></blockquote></div>
+      <div class="line"><input class="tags" placeholder="#태그 공백구분" value="${tagText}" /></div>
+      <div class="line"><input class="note" placeholder="메모" value="${item.note||''}" /></div>
+      <div class="footer">
+        <a class="link" href="${item.url}" target="_blank" rel="noopener">${item.url}</a>
+        <div class="actions">
+          <button class="save">저장</button>
+          <button class="del">삭제</button>
+        </div>
+      </div>
+    </article>`;
+}
+function currentFiltered(){
+  const q = ($('#q')?.value||'').toLowerCase().trim();
+  const active=state.activeTag;
+  return state.items.filter(it=>{
+    const tagText=(it.tags||[]).join(' ');
+    const note=it.note||'';
+    const hay=[it.url, tagText, note].join(' ').toLowerCase();
+    const qok=!q||hay.includes(q);
+    let tok=true;
+    if(active===UNTAGGED) tok = (it.tags||[]).length===0;
+    else if(active) tok = (it.tags||[]).map(t=>t.toLowerCase()).includes(active);
+    return qok && tok;
+  });
+}
+function pageSlice(arr){
+  const total=arr.length;
+  const totalPages=Math.max(1, Math.ceil(total/state.pageSize));
+  if(state.page>totalPages) state.page=totalPages;
+  const start=(state.page-1)*state.pageSize;
+  const end=Math.min(start+state.pageSize, total);
+  return { total, totalPages, start, end, slice: arr.slice(start,end) };
+}
+function render(){
+  const filtered=currentFiltered();
+  state.filteredCache=filtered;
+  const { total, totalPages, start, end, slice } = pageSlice(filtered);
+
+  const grid=$('#grid');
+  if(grid) grid.innerHTML = slice.map((it,i)=>cardHTML(it, i+start)).join('');
+
+  // 트윗 위젯 로드
+  const loadWidgets = ()=> (window.twttr && window.twttr.widgets) ? window.twttr.widgets.load(grid) : setTimeout(loadWidgets, 200);
+  loadWidgets();
+
+  renderCount(total, total?(start+1):0, end, state.page, totalPages);
+  renderTagChips();
+
+  // 카드 이벤트
+  $$('.card').forEach(card=>{
+    card.querySelector('.save')?.addEventListener('click', ()=>{
+      const idx=+card.dataset.idx;
+      const tags=card.querySelector('.tags').value.trim().split(/\s+/).filter(Boolean);
+      const note=card.querySelector('.note').value.trim();
+      state.items[idx].tags=tags.map(s=>s.startsWith('#')?s.toLowerCase():'#'+s.toLowerCase());
+      state.items[idx].note=note;
+      saveLocal(state.items);
+      render();
+    });
+    card.querySelector('.del')?.addEventListener('click', ()=>{
+      const idx=+card.dataset.idx;
+      if(!confirm('이 카드를 삭제할까요?')) return;
+      state.items.splice(idx,1);
+      saveLocal(state.items);
+      const { totalPages } = pageSlice(currentFiltered());
+      if(state.page>totalPages) state.page=totalPages;
+      render();
+    });
+  });
+}
+function filterAndRender(){ state.page=1; render(); }
+
+/* ===== 초기화 & 이벤트 바인딩 ===== */
+document.addEventListener('DOMContentLoaded', () => {
+  // 테마
+  applyTheme();
+  $('#darkToggle')?.addEventListener('change', (e)=>{ state.theme=e.target.checked?'dark':'light'; localStorage.setItem('theme', state.theme); applyTheme(); });
+
+  // 페이지 크기
+  const ps=$('#pageSize'); if(ps){ ps.value=String(state.pageSize); ps.addEventListener('change',(e)=>{ state.pageSize=+e.target.value; localStorage.setItem(LS_PAGE_SIZE,String(state.pageSize)); state.page=1; render(); }); }
+
+  // 검색/입력
+  $('#q')?.addEventListener('input', ()=> filterAndRender());
+  $('#importBtn')?.addEventListener('click', ()=>{
+    const lines=$('#bulk').value.split('\n').map(s=>s.trim()).filter(Boolean);
+    const newOnes=[];
+    for(const line of lines){
+      const parsed=parseLine(line);
+      if(!parsed) continue;
+      if(state.items.some(x=>x.url===parsed.url)) continue;
+      newOnes.push(parsed);
+    }
+    if(!newOnes.length){ alert('추가할 URL이 없습니다.'); return; }
+    state.items=[...newOnes, ...state.items];
+    saveLocal(state.items);
+    $('#bulk').value='';
+    filterAndRender();
+  });
+  $('#clearInput')?.addEventListener('click', ()=> $('#bulk').value='');
+
+  // 페이징 버튼
+  $('#firstPage')?.addEventListener('click', ()=>{ state.page=1; render(); });
+  $('#prevPage')?.addEventListener('click', ()=>{ state.page=Math.max(1,state.page-1); render(); });
+  $('#nextPage')?.addEventListener('click', ()=>{
+    const { totalPages } = pageSlice(state.filteredCache.length?state.filteredCache:currentFiltered());
+    state.page=Math.min(totalPages,state.page+1); render();
+  });
+  $('#lastPage')?.addEventListener('click', ()=>{
+    const { totalPages } = pageSlice(state.filteredCache.length?state.filteredCache:currentFiltered());
+    state.page=totalPages; render();
+  });
+
+  // 백업/복원
+  $('#exportBtn')?.addEventListener('click', ()=>{
+    const blob=new Blob([JSON.stringify(state.items,null,2)],{type:'application/json'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a'); a.href=url; a.download='tweet-shelf-backup.json'; a.click();
+    URL.revokeObjectURL(url);
+  });
+  $('#importJsonBtn')?.addEventListener('click', ()=> $('#fileInput').click());
+  $('#fileInput')?.addEventListener('change', (e)=>{
+    const f=e.target.files?.[0]; if(!f) return;
+    const r=new FileReader();
+    r.onload=()=>{
+      try{
+        const arr=JSON.parse(r.result);
+        if(!Array.isArray(arr)) throw new Error('형식 오류');
+        const cleaned=arr.filter(x=>x && typeof x.url==='string').map(x=>({
+          url: normalize(x.url),
+          tags: Array.isArray(x.tags)?x.tags.map(t=>t.toLowerCase()):[],
+          note: typeof x.note==='string' ? x.note : ''
+        }));
+        state.items=cleaned; saveLocal(state.items); filterAndRender();
+      }catch{ alert('JSON 형식이 올바르지 않습니다.'); }
+    };
+    r.readAsText(f,'utf-8'); e.target.value='';
+  });
+
+  // ===== GitHub Gist 동기화 =====
+  async function cloudPull(){
+    if(!state.token || !state.gistId){ alert('동기화 설정이 비어있습니다.'); return; }
+    const res = await fetch(`https://api.github.com/gists/${state.gistId}`, {
+      headers:{ 'Authorization':`Bearer ${state.token}`, 'Accept':'application/vnd.github+json' }
+    });
+    if(!res.ok){ alert('불러오기 실패: Gist ID/토큰 확인'); return; }
+    const data = await res.json();
+    const file = Object.values(data.files||{}).find(f=>/tweet-shelf\.json$/i.test(f.filename));
+    if(!file){ alert('Gist에 tweet-shelf.json 파일이 없습니다.'); return; }
+    try{
+      const arr = JSON.parse(file.content);
+      if(!Array.isArray(arr)) throw new Error();
+      const map=new Map();
+      arr.forEach(x=> map.set(x.url, {url:normalize(x.url), tags:(x.tags||[]).map(t=>t.toLowerCase()), note:x.note||''}));
+      state.items.forEach(x=>{ if(!map.has(x.url)) map.set(x.url, x); });
+      state.items=Array.from(map.values());
+      saveLocal(state.items);
+      filterAndRender();
+      alert('클라우드에서 불러왔습니다.');
+    }catch{ alert('Gist JSON 파싱 실패'); }
+  }
+  async function cloudPush(){
+    if(!state.token || !state.gistId){ alert('동기화 설정이 비어있습니다.'); return; }
+    const body = { files: { "tweet-shelf.json": { content: JSON.stringify(state.items, null, 2) } } };
+    const res = await fetch(`https://api.github.com/gists/${state.gistId}`, {
+      method:'PATCH',
+      headers:{ 'Authorization':`Bearer ${state.token}`, 'Accept':'application/vnd.github+json', 'Content-Type':'application/json' },
+      body: JSON.stringify(body)
+    });
+    if(!res.ok){ alert('업로드 실패: Gist ID/토큰/권한 확인'); return; }
+    alert('클라우드로 업로드했습니다.');
+  }
+  $('#cloudPull')?.addEventListener('click', cloudPull);
+  $('#cloudPush')?.addEventListener('click', cloudPush);
+
+  // ===== 모달(안전 핸들러: 요소 없으면 자동 생성) =====
+  const btnOpen = $('#syncSettings');
+  let modalWrap = $('#modalWrap');
+
+  if (!modalWrap) {
+    modalWrap = document.createElement('div');
+    modalWrap.id = 'modalWrap';
+    modalWrap.className = 'modal-backdrop';
+    modalWrap.style.display = 'none';
+    modalWrap.innerHTML = `
+      <div class="modal">
+        <h2>동기화 설정</h2>
+        <div class="desc">GitHub 토큰과 Gist ID를 입력하세요.</div>
+        <div class="row">
+          <div><label class="sub">Token</label><input id="tokenInput" /></div>
+          <div><label class="sub">Gist ID</label><input id="gistInput" /></div>
+          <div class="controls" style="margin-top:10px">
+            <button id="saveSettings">저장</button>
+            <button id="closeSettings">닫기</button>
+            <span class="sub" id="settingsStatus"></span>
+          </div>
+        </div>
+      </div>`;
+    document.body.appendChild(modalWrap);
+  }
+
+  function openSettings(){
+    $('#tokenInput').value = state.token || '';
+    $('#gistInput').value  = state.gistId || '';
+    $('#settingsStatus').textContent = '';
+    modalWrap.style.display='flex';
+  }
+  function closeSettings(){ modalWrap.style.display='none'; }
+  function saveSettings(){
+    state.token = $('#tokenInput').value.trim();
+    state.gistId = $('#gistInput').value.trim();
+    localStorage.setItem(CFG_TOKEN, state.token);
+    localStorage.setItem(CFG_GIST,  state.gistId);
+    $('#settingsStatus').textContent='저장됨';
+    setTimeout(closeSettings, 300);
+  }
+
+  btnOpen?.addEventListener('click', openSettings);
+  $('#closeSettings')?.addEventListener('click', closeSettings);
+  $('#saveSettings')?.addEventListener('click', saveSettings);
+  document.addEventListener('click', (e)=>{ if(e.target && e.target.id==='modalWrap') closeSettings(); });
+
+  // 최초 렌더
+  render();
+});
+</script>
+</body>
+</html>

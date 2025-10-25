@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>트윗 보관함 — 가벼운 모드(수동/지연 임베드) + 자동저장</title>
+<title>트윗 보관함 — 배치 로드 & 무한스크롤(윈도우링)</title>
 <script async src="https://platform.twitter.com/widgets.js"></script>
 <style>
   :root { --bg:#fff; --fg:#1b1f23; --muted:#6a737d; --card:#fff; --border:#eaecef; --chip:#f1f8ff; --chip-fg:#0366d6; --accent:#0366d6; }
@@ -26,7 +26,7 @@
   .chip{background:var(--chip);color:var(--chip-fg);border:1px solid var(--border);padding:6px 10px;border-radius:999px;font-size:12px;cursor:pointer}
   .chip.active{outline:2px solid var(--chip-fg)}
   main .wrap{padding-top:8px}
-  #grid{display:grid;gap:16px;margin:16px 0 40px;grid-template-columns:repeat(auto-fill,minmax(360px,1fr))}
+  #grid{display:grid;gap:16px;margin:16px 0 20px;grid-template-columns:repeat(auto-fill,minmax(360px,1fr))}
   .card{border:1px solid var(--border);border-radius:14px;background:var(--card);padding:12px;display:flex;flex-direction:column;gap:8px}
   .meta{display:flex;gap:8px;flex-wrap:wrap;align-items:center;font-size:12px;color:var(--muted)}
   .line{display:flex;gap:8px;align-items:center}
@@ -35,18 +35,52 @@
   .link{font-size:12px;color:var(--muted);text-decoration:none;word-break:break-all}
   .kbd{border:1px solid var(--border);border-bottom-width:2px;border-radius:6px;padding:2px 6px;font-family:ui-monospace,monospace}
   [data-theme="dark"] .twitter-tweet-rendered{filter:brightness(0.92)}
+  .placeholder{border:1px dashed var(--border);border-radius:12px;padding:10px;text-align:center;font-size:12px;color:var(--muted)}
   .pagingbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end;margin-top:8px}
   .pagingbar .muted{white-space:nowrap}
-  .placeholder{border:1px dashed var(--border);border-radius:12px;padding:10px;text-align:center;font-size:12px;color:var(--muted)}
+  /* 모달 */
+  .modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.4);display:none;align-items:center;justify-content:center;z-index:50}
+  .modal{background:var(--card);border:1px solid var(--border);border-radius:12px;max-width:520px;width:92%;padding:16px}
+  .modal h2{margin:0 0 8px;font-size:16px}
+  .modal .desc{font-size:12px;color:var(--muted);margin-bottom:8px}
+  .modal .row{display:grid;grid-template-columns:1fr;gap:10px}
+  /* Mobile compact header */
+  @media (max-width: 640px) {
+    header .wrap { padding: 8px 12px; }
+    h1 { font-size: 16px; margin-bottom: 4px; }
+    .row { gap: 10px; }
+    .sub { font-size: 11px; }
+    textarea, input, select, button { padding: 8px 10px; border-radius: 8px; }
+    .controls { gap: 6px; }
+    #tagChips { margin-top: 6px; }
+    main .wrap { padding-top: 6px; }
+  }
 </style>
 </head>
 <body>
 <header>
   <div class="wrap">
-    <h1>트윗 보관함 <span class="sub">가벼운 모드(수동/지연 임베드) + 자동저장</span></h1>
+    <h1>트윗 보관함 <span class="sub">배치 로드 / 무한스크롤(윈도우링) + 자동저장 + 동기화</span></h1>
+
+    <!-- 모드/임베드 제어 줄 -->
+    <div class="controls" style="margin:6px 0">
+      <label class="switch">
+        <input type="radio" name="mode" id="modeLoadMore" checked> 더 보기(배치 로드)
+      </label>
+      <label class="switch">
+        <input type="radio" name="mode" id="modeInfinite"> 무한 스크롤(윈도우링)
+      </label>
+      <label class="switch">동시에
+        <input id="embedConcurrency" type="number" min="1" max="8" value="4" style="width:56px;margin:0 6px">개 임베드
+      </label>
+      <button id="embedAll">현재 표시분 임베드</button>
+      <span id="embedStatus" class="sub"></span>
+    </div>
+
     <div class="row">
+      <!-- 좌측: 추가/도구 -->
       <div>
-        <div class="sub">한 줄에 하나씩 <b>트윗 URL</b>. 같은 줄에 <code>#태그</code>와 <code>| 메모</code>도 가능. 아래 “공통 태그”는 이번 추가분 전체에 붙습니다.</div>
+        <div class="sub">한 줄에 하나씩 <b>트윗 URL</b>. 같은 줄에 <code>#태그</code>와 <code>| 메모</code> 가능. 아래 “공통 태그”는 이번 추가분 전체에 붙습니다.</div>
         <textarea id="bulk" placeholder="예)
 https://twitter.com/nasa/status/123... #우주 #사진 | 허블 텍스트
 https://x.com/someone/status/456... #정책 | 개인 메모"></textarea>
@@ -57,12 +91,8 @@ https://x.com/someone/status/456... #정책 | 개인 메모"></textarea>
           <button id="syncSettings">동기화 설정</button>
           <span class="sub">중복 URL은 자동 건너뜁니다.</span>
         </div>
-        <div class="controls" style="margin-top:6px">
-          <label class="switch"><input type="checkbox" id="autoEmbedToggle" /> 자동 임베드(화면 진입 시)</label>
-          <button id="embedAll">현재 페이지 전체 임베드</button>
-          <span class="sub">기본: 수동 임베드(가벼움)</span>
-        </div>
       </div>
+      <!-- 우측: 검색/동기화/페이지 -->
       <div>
         <div class="sub">검색( URL / #태그 / 메모 )</div>
         <input id="q" placeholder="#우주 또는 메모 단어 등" />
@@ -78,23 +108,19 @@ https://x.com/someone/status/456... #정책 | 개인 메모"></textarea>
           <input type="file" id="fileInput" accept="application/json" style="display:none" />
         </div>
         <div class="controls" style="margin-top:6px">
-          <div class="sub">표시 개수</div>
-          <select id="pageSize">
+          <div class="sub">배치 크기</div>
+          <select id="batchSize">
             <option>6</option><option>9</option><option selected>12</option><option>18</option><option>24</option><option>36</option>
           </select>
-          <div class="pagingbar">
-            <button id="firstPage">처음</button>
-            <button id="prevPage">이전</button>
-            <button id="nextPage">다음</button>
-            <button id="lastPage">마지막</button>
-            <span class="sub" id="pageInfo"></span>
-          </div>
+          <button id="loadMore">더 보기</button>
+          <span class="sub" id="pageInfo"></span>
         </div>
         <div class="sub" style="margin-top:6px">
           <span class="kbd">Tip</span> 태그 칩 클릭 → 해당 태그만 보기. <b>‘태그 없음’</b> 칩으로 무태그만 보기.
         </div>
       </div>
     </div>
+
     <div id="tagChips" class="chips"></div>
   </div>
 </header>
@@ -102,6 +128,8 @@ https://x.com/someone/status/456... #정책 | 개인 메모"></textarea>
 <main>
   <div class="wrap">
     <div id="grid"></div>
+    <!-- 무한스크롤 센티넬 -->
+    <div id="sentinel" style="height:1px"></div>
   </div>
 </main>
 
@@ -123,14 +151,14 @@ https://x.com/someone/status/456... #정책 | 개인 메모"></textarea>
 </div>
 
 <script>
-/* ===== 유틸 ===== */
-const $ = (s,d=document)=>d.querySelector(s);
-const $$ = (s,d=document)=>Array.from(d.querySelectorAll(s));
-const LS_KEY='tweet-shelf-v5';           // 버전 올림(기존 localStorage와 충돌 없음)
+/* ========== 유틸 & 상태 ========== */
+const $=(s,d=document)=>d.querySelector(s);
+const $$=(s,d=document)=>Array.from(d.querySelectorAll(s));
+const LS_KEY='tweet-shelf-v6';
 const CFG_TOKEN='tweet-shelf-token';
-const CFG_GIST ='tweet-shelf-gist';
-const LS_PAGE_SIZE='tweet-shelf-pageSize';
-const LS_AUTO_EMBED='tweet-shelf-autoEmbed';
+const CFG_GIST='tweet-shelf-gist';
+const LS_BATCH='tweet-shelf-batch';
+const LS_THEME='theme';
 const UNTAGGED='__UNTAGGED__';
 
 const debounce=(fn,ms=600)=>{let t;return(...a)=>{clearTimeout(t);t=setTimeout(()=>fn(...a),ms)}};
@@ -145,34 +173,32 @@ const parseLine=(line)=>{
 const loadLocal=()=>{try{return JSON.parse(localStorage.getItem(LS_KEY)||'[]')}catch{return[]}};
 const saveLocal=(arr)=>localStorage.setItem(LS_KEY, JSON.stringify(arr));
 
-/* ===== 상태 ===== */
 const state={
   items: loadLocal(),
-  theme: localStorage.getItem('theme') || 'light',
+  theme: localStorage.getItem(LS_THEME) || 'light',
   token: localStorage.getItem(CFG_TOKEN) || '',
   gistId: localStorage.getItem(CFG_GIST) || '',
   activeTag: null, // null|tag|UNTAGGED
-  page: 1,
-  pageSize: +(localStorage.getItem(LS_PAGE_SIZE) || 12),
-  autoEmbed: localStorage.getItem(LS_AUTO_EMBED)==='1', // 기본 false(가벼움)
-  filteredCache: [],
-  io: null  // IntersectionObserver
+  batch: +(localStorage.getItem(LS_BATCH) || 12),
+  offset: 0,          // 배치 로드/무한스크롤에서 현재까지 렌더된 개수
+  mode: 'loadMore',   // 'loadMore' | 'infinite'
+  ioLoad: null,       // 하단 로더
+  ioWindow: null,     // 윈도우링
+  MAX_MOUNTED: 30     // 동시에 붙여둘 카드 상한(무한스크롤 윈도우링)
 };
 
-/* ===== 테마 ===== */
+/* ========== 테마 & 태그칩 ========== */
 function applyTheme(){ document.documentElement.setAttribute('data-theme', state.theme); $('#darkToggle').checked = state.theme==='dark'; }
-
-/* ===== 태그 칩 ===== */
 function uniqueTags(){ const set=new Set(); state.items.forEach(it=>(it.tags||[]).forEach(t=>set.add(t))); return Array.from(set).sort((a,b)=>a.localeCompare(b)); }
 function renderTagChips(){
-  const box=$('#tagChips'); if(!box) return; box.innerHTML='';
+  const box=$('#tagChips'); box.innerHTML='';
   const mk=(label,active,click)=>{const b=document.createElement('button'); b.className='chip'+(active?' active':''); b.textContent=label; b.addEventListener('click',click); box.appendChild(b);};
-  mk('전체', !state.activeTag, ()=>{state.activeTag=null; state.page=1; render()});
-  mk('태그 없음', state.activeTag===UNTAGGED, ()=>{state.activeTag=(state.activeTag===UNTAGGED?null:UNTAGGED); state.page=1; render()});
-  uniqueTags().forEach(tag=> mk(tag, state.activeTag===tag, ()=>{state.activeTag=(state.activeTag===tag?null:tag); state.page=1; render()}));
+  mk('전체', !state.activeTag, ()=>{state.activeTag=null; resetAndRenderList();});
+  mk('태그 없음', state.activeTag===UNTAGGED, ()=>{state.activeTag=(state.activeTag===UNTAGGED?null:UNTAGGED); resetAndRenderList();});
+  uniqueTags().forEach(tag=> mk(tag, state.activeTag===tag, ()=>{state.activeTag=(state.activeTag===tag?null:tag); resetAndRenderList();}));
 }
 
-/* ===== 필터/페이지 ===== */
+/* ========== 필터 & 목록 ========== */
 function currentFiltered(){
   const q=($('#q')?.value||'').toLowerCase().trim();
   const active=state.activeTag;
@@ -187,46 +213,13 @@ function currentFiltered(){
     return qok && tok;
   });
 }
-function pageSlice(arr){
-  const total=arr.length, totalPages=Math.max(1, Math.ceil(total/state.pageSize));
-  if(state.page>totalPages) state.page=totalPages;
-  const start=(state.page-1)*state.pageSize, end=Math.min(start+state.pageSize,total);
-  return {total,totalPages,start,end,slice:arr.slice(start,end)};
-}
 
-/* ===== 임베드 제어 ===== */
-function tweetIdFromUrl(url){ const m=url.match(/status\/(\d+)/); return m?m[1]:null; }
-function ensureEmbed(card){
-  // 이미 렌더됨?
-  if (card.dataset.embedded==='1') return;
-  const url=card.dataset.url;
-  const id=tweetIdFromUrl(url);
-  const mount=card.querySelector('.embed');
-  if(!mount) return;
-  mount.innerHTML=''; // 비움
-  if(window.twttr && window.twttr.widgets && id){
-    window.twttr.widgets.createTweet(id, mount);
-    card.dataset.embedded='1';
-  } else {
-    // fallback: blockquote + load
-    mount.innerHTML=`<blockquote class="twitter-tweet"><a href="${url}"></a></blockquote>`;
-    if(window.twttr&&window.twttr.widgets) window.twttr.widgets.load(mount);
-    card.dataset.embedded='1';
-  }
-}
-function clearEmbed(card){
-  const mount=card.querySelector('.embed');
-  if(mount){ mount.innerHTML=`<div class="placeholder">임베드 안 함 · [보기]를 눌러 표시</div>`; }
-  card.dataset.embedded='0';
-}
-
-/* ===== 카드 UI ===== */
-function cardHTML(item, idx){
+function cardHTML(item){
   const tagText=(item.tags||[]).join(' ');
-  // 기본은 임베드 안 함(가벼움)
-  const placeholder = `<div class="placeholder">임베드 안 함 · [보기]를 눌러 표시</div>`;
+  const placeholder = `<div class="placeholder">임베드 안 함 · [보기]로 표시</div>`;
   return `
-    <article class="card" data-idx="${idx}" data-url="${item.url}" data-tags="${tagText}" data-note="${item.note||''}" data-embedded="0">
+    <article class="card" data-id="${item.url}" data-url="${item.url}"
+             data-tags="${tagText}" data-note="${item.note||''}" data-embedded="0">
       <div class="meta"><span>${tagText || '태그 없음'}</span>${item.note?`<span>· ${item.note}</span>`:''}</div>
       <div class="embed">${placeholder}</div>
       <div class="line">
@@ -245,110 +238,177 @@ function cardHTML(item, idx){
     </article>`;
 }
 
-/* ===== 렌더(가벼운 방식) ===== */
-function render(){
-  const filtered=currentFiltered();
-  state.filteredCache=filtered;
-  const { total,totalPages,start,end,slice } = pageSlice(filtered);
-
-  const grid=$('#grid');
-  grid.innerHTML = slice.map((it,i)=>cardHTML(it, i+start)).join('');
-  $('#count').textContent=`총 ${total}개`;
-  $('#pageInfo').textContent = total ? `· ${state.page}/${totalPages} · ${start+1}–${end}` : '';
-
-  renderTagChips();
-
-  // 카드 이벤트: 보기/삭제/자동저장
-  $$('.card').forEach(card=>{
-    // 보기(수동 임베드)
+function bindCardEvents(cards){
+  cards.forEach(item=>{
+    const card = document.querySelector(`.card[data-id="${CSS.escape(item.url)}"]`);
+    if(!card) return;
+    // 보기(한 장 임베드)
     card.querySelector('.view').addEventListener('click', ()=> ensureEmbed(card));
-    // 삭제(부분 갱신)
+    // 삭제
     card.querySelector('.del').addEventListener('click', ()=>{
-      const idx=+card.dataset.idx;
+      const idx=state.items.findIndex(x=>x.url===item.url);
+      if(idx===-1) return;
       if(!confirm('이 카드를 삭제할까요?')) return;
       state.items.splice(idx,1);
       saveLocal(state.items);
-      // 현재 페이지만 다시 렌더(빠름)
-      const { totalPages } = pageSlice(currentFiltered());
-      if(state.page>totalPages) state.page=totalPages;
-      render();
+      // DOM에서 제거
+      card.remove();
+      // 카운트 갱신 & 목록 재구성(필요시)
+      updateCounters();
     });
-
-    // 자동 저장(디바운스)
-    const idx=+card.dataset.idx;
+    // 자동저장(디바운스)
     const tagsInput=card.querySelector('.tags');
     const noteInput=card.querySelector('.note');
     const doSave=debounce(()=>{
-      const tags=tagsInput.value.trim().split(/\s+/).filter(Boolean);
+      const idx=state.items.findIndex(x=>x.url===item.url);
+      if(idx===-1) return;
+      const tags=tagsInput.value.trim().split(/\s+/).filter(Boolean)
+                     .map(s=>s.startsWith('#')?s.toLowerCase():'#'+s.toLowerCase());
       const note=noteInput.value.trim();
-      state.items[idx].tags=tags.map(s=>s.startsWith('#')?s.toLowerCase():'#'+s.toLowerCase());
+      state.items[idx].tags=tags;
       state.items[idx].note=note;
       saveLocal(state.items);
-      // 상단 메타 텍스트만 부분 갱신
-      card.dataset.tags=(state.items[idx].tags||[]).join(' ');
-      card.dataset.note=note;
+      // 상단 메타 갱신
+      card.dataset.tags=tags.join(' '); card.dataset.note=note;
       card.querySelector('.meta').innerHTML=`<span>${card.dataset.tags || '태그 없음'}</span>${note?`<span>· ${note}</span>`:''}`;
+      renderTagChips(); // 칩도 갱신 필요
     }, 600);
     tagsInput.addEventListener('input', doSave);
     noteInput.addEventListener('input', doSave);
   });
-
-  // 자동 임베드 모드면, 가시영역 들어온 카드만 임베드
-  setupObserver();
 }
 
-/* ===== IntersectionObserver로 자동 임베드 ===== */
-function setupObserver(){
-  // 해제
-  if(state.io){ state.io.disconnect(); state.io=null; }
-  if(!state.autoEmbed) return;
-
-  state.io = new IntersectionObserver((entries)=>{
-    entries.forEach(entry=>{
-      if(entry.isIntersecting){
-        const card=entry.target;
-        ensureEmbed(card);
-        state.io.unobserve(card);
+/* ========== 임베드 ========== */
+function tweetIdFromUrl(url){ const m=url.match(/status\/(\d+)/); return m?m[1]:null; }
+function ensureEmbed(card){
+  if(card.dataset.embedded==='1') return;
+  const url=card.dataset.url;
+  const id=tweetIdFromUrl(url);
+  const mount=card.querySelector('.embed');
+  if(!mount) return;
+  mount.innerHTML='';
+  if(window.twttr && window.twttr.widgets && id){
+    window.twttr.widgets.createTweet(id, mount);
+    card.dataset.embedded='1';
+  } else {
+    mount.innerHTML=`<blockquote class="twitter-tweet"><a href="${url}"></a></blockquote>`;
+    if(window.twttr&&window.twttr.widgets) window.twttr.widgets.load(mount);
+    card.dataset.embedded='1';
+  }
+}
+async function embedQueue(cards, concurrency){
+  const total=cards.length; let done=0, running=0, index=0;
+  const statusEl=$('#embedStatus');
+  const upd=()=>{ if(statusEl) statusEl.textContent= total ? `임베드 진행: ${done}/${total}` : ''; };
+  upd();
+  return new Promise(resolve=>{
+    const launch=()=>{
+      if(done===total){ upd(); resolve(); return; }
+      while(running<concurrency && index<total){
+        const c=cards[index++]; running++;
+        try{ ensureEmbed(c); }catch(e){ console.warn('embed error',e); }
+        finally{ done++; running--; upd(); setTimeout(launch,0); }
       }
-    });
-  }, { root:null, rootMargin:'200px', threshold:0.01 });
-
-  $$('.card').forEach(card=> state.io.observe(card));
+    };
+    launch();
+  });
 }
 
-/* ===== 초기화 & 핸들러 ===== */
+/* ========== 렌더링 흐름 ========== */
+function updateCounters(){
+  const total = currentFiltered().length;
+  const shown = $('#grid').children.length;
+  $('#count').textContent = `총 ${total}개 · ${shown}/${total}`;
+}
+function resetDOMList(){
+  $('#grid').innerHTML='';
+  state.offset=0;
+  updateCounters();
+}
+
+/* 배치 추가 공통 */
+function appendBatch(filtered){
+  const BATCH=state.batch;
+  const slice=filtered.slice(state.offset, state.offset+BATCH);
+  if(!slice.length) return 0;
+  const html = slice.map(cardHTML).join('');
+  $('#grid').insertAdjacentHTML('beforeend', html);
+  bindCardEvents(slice);
+  state.offset += slice.length;
+  updateCounters();
+  return slice.length;
+}
+
+/* 모드: 더 보기(배치) */
+async function onLoadMoreClick(){
+  if(state.mode!=='loadMore') return;
+  const filtered=currentFiltered();
+  const added = appendBatch(filtered);
+  if(!added){ $('#pageInfo').textContent='끝까지 표시되었습니다.'; return; }
+  // 새로 추가된 카드들 임베드 큐
+  const cards = Array.from(document.querySelectorAll('.card')).slice(-added);
+  const c = Math.max(1, Math.min(8, +$('#embedConcurrency').value || 4));
+  await embedQueue(cards, c);
+}
+
+/* 모드: 무한스크롤(윈도우링) */
+function setupInfiniteObservers(){
+  // 하단 로더
+  if(state.ioLoad){ state.ioLoad.disconnect(); state.ioLoad=null; }
+  state.ioLoad = new IntersectionObserver(async entries=>{
+    if(!entries[0].isIntersecting) return;
+    if(state.mode!=='infinite') return;
+    const filtered=currentFiltered();
+    const added = appendBatch(filtered);
+    if(added){
+      const newCards = Array.from(document.querySelectorAll('.card')).slice(-added);
+      const c = Math.max(1, Math.min(8, +$('#embedConcurrency').value || 4));
+      await embedQueue(newCards, c);
+      windowingTrim(); // 초과분 제거
+    }
+  }, {root:null, rootMargin:'200px'});
+  state.ioLoad.observe($('#sentinel'));
+
+  // 윈도우링: 너무 많은 카드가 붙으면 위쪽부터 임베드 제거
+  if(state.ioWindow){ state.ioWindow.disconnect(); state.ioWindow=null; }
+  // 여기서는 별도 IO 없이 windowingTrim을 배치마다 호출
+}
+function windowingTrim(){
+  const cards = Array.from(document.querySelectorAll('.card'));
+  if(cards.length <= state.MAX_MOUNTED) return;
+  const removeCount = cards.length - state.MAX_MOUNTED;
+  for(let i=0;i<removeCount;i++){
+    const card=cards[i];
+    const mount=card.querySelector('.embed');
+    if(mount){ mount.innerHTML='<div class="placeholder">임베드 해제됨</div>'; }
+    card.dataset.embedded='0';
+  }
+}
+
+/* ========== 초기화 & 이벤트 ========== */
 document.addEventListener('DOMContentLoaded', ()=>{
   // 테마
   applyTheme();
-  $('#darkToggle').addEventListener('change', e=>{ state.theme=e.target.checked?'dark':'light'; localStorage.setItem('theme',state.theme); applyTheme(); });
+  $('#darkToggle').addEventListener('change', e=>{ state.theme=e.target.checked?'dark':'light'; localStorage.setItem('theme', state.theme); applyTheme(); });
 
-  // 자동 임베드 스위치
-  $('#autoEmbedToggle').checked = state.autoEmbed;
-  $('#autoEmbedToggle').addEventListener('change', e=>{
-    state.autoEmbed = !!e.target.checked;
-    localStorage.setItem(LS_AUTO_EMBED, state.autoEmbed ? '1' : '0');
-    render();
-  });
-  $('#embedAll').addEventListener('click', ()=> $$('.card').forEach(ensureEmbed));
+  // 배치 크기
+  $('#batchSize').value=String(state.batch);
+  $('#batchSize').addEventListener('change', e=>{ state.batch=+e.target.value; localStorage.setItem(LS_BATCH, String(state.batch)); resetAndRenderList(); });
 
-  // 페이지 크기/페이지 버튼
-  $('#pageSize').value=String(state.pageSize);
-  $('#pageSize').addEventListener('change', e=>{ state.pageSize=+e.target.value; localStorage.setItem(LS_PAGE_SIZE,String(state.pageSize)); state.page=1; render(); });
-  $('#firstPage').addEventListener('click', ()=>{ state.page=1; render(); });
-  $('#prevPage').addEventListener('click', ()=>{ state.page=Math.max(1,state.page-1); render(); });
-  $('#nextPage').addEventListener('click', ()=>{
-    const { totalPages } = pageSlice(state.filteredCache.length?state.filteredCache:currentFiltered());
-    state.page=Math.min(totalPages,state.page+1); render();
+  // 모드 전환
+  $('#modeLoadMore').addEventListener('change',()=>{
+    state.mode='loadMore'; resetAndRenderList();
+    $('#loadMore').style.display='inline-block';
   });
-  $('#lastPage').addEventListener('click', ()=>{
-    const { totalPages } = pageSlice(state.filteredCache.length?state.filteredCache:currentFiltered());
-    state.page=totalPages; render();
+  $('#modeInfinite').addEventListener('change',()=>{
+    state.mode='infinite'; resetAndRenderList();
+    $('#loadMore').style.display='none';
   });
 
-  // 검색
-  $('#q').addEventListener('input', ()=>{ state.page=1; render(); });
+  // 검색/태그 변화 → 목록 리셋
+  $('#q').addEventListener('input', ()=> resetAndRenderList());
 
-  // 가져오기 (공통 태그 포함)
+  // 가져오기(공통 태그 병합)
   $('#importBtn').addEventListener('click', ()=>{
     const lines=$('#bulk').value.split('\n').map(s=>s.trim()).filter(Boolean);
     const common=($('#commonTags').value||'').trim().split(/\s+/).filter(Boolean).map(t=>t.startsWith('#')?t.toLowerCase():'#'+t.toLowerCase());
@@ -362,11 +422,20 @@ document.addEventListener('DOMContentLoaded', ()=>{
     if(!newOnes.length){ alert('추가할 URL이 없습니다.'); return; }
     state.items=[...newOnes, ...state.items];
     saveLocal(state.items);
-    $('#bulk').value=''; // 입력창 비우기
-    state.page=1;
-    render();
+    $('#bulk').value='';
+    resetAndRenderList();
   });
   $('#clearInput').addEventListener('click', ()=> $('#bulk').value='');
+
+  // 더 보기(배치 로드)
+  $('#loadMore').addEventListener('click', onLoadMoreClick);
+
+  // 현재 표시분 임베드(수동 전체)
+  $('#embedAll').addEventListener('click', async ()=>{
+    const vis = Array.from(document.querySelectorAll('.card')).filter(c=>c.offsetParent!==null);
+    const c = Math.max(1, Math.min(8, +$('#embedConcurrency').value || 4));
+    await embedQueue(vis, c);
+  });
 
   // 백업/복원
   $('#exportBtn').addEventListener('click', ()=>{
@@ -381,7 +450,7 @@ document.addEventListener('DOMContentLoaded', ()=>{
       try{
         const arr=JSON.parse(r.result); if(!Array.isArray(arr)) throw new Error();
         const cleaned=arr.filter(x=>x && typeof x.url==='string').map(x=>({ url:normalize(x.url), tags:Array.isArray(x.tags)?x.tags.map(t=>t.toLowerCase()):[], note: typeof x.note==='string'?x.note:'' }));
-        state.items=cleaned; saveLocal(state.items); state.page=1; render();
+        state.items=cleaned; saveLocal(state.items); resetAndRenderList();
       }catch{ alert('JSON 형식이 올바르지 않습니다.'); }
     };
     r.readAsText(f,'utf-8'); e.target.value='';
@@ -402,7 +471,7 @@ document.addEventListener('DOMContentLoaded', ()=>{
       state.items.forEach(x=>{ if(!map.has(x.url)) map.set(x.url,x); });
       state.items=Array.from(map.values());
       saveLocal(state.items);
-      state.page=1; render();
+      resetAndRenderList();
       alert('클라우드에서 불러왔습니다.');
     }catch{ alert('Gist JSON 파싱 실패'); }
   }
@@ -419,16 +488,41 @@ document.addEventListener('DOMContentLoaded', ()=>{
   // 모달
   function openSettings(){ $('#tokenInput').value=state.token||''; $('#gistInput').value=state.gistId||''; $('#settingsStatus').textContent=''; $('#modalWrap').style.display='flex'; }
   function closeSettings(){ $('#modalWrap').style.display='none'; }
-  function saveSettings(){ state.token=$('#tokenInput').value.trim(); state.gistId=$('#gistInput').value.trim(); localStorage.setItem(CFG_TOKEN,state.token); localStorage.setItem(CFG_GIST,state.gistId); $('#settingsStatus').textContent='저장됨'; setTimeout(closeSettings, 300); }
+  function saveSettings(){ state.token=$('#tokenInput').value.trim(); state.gistId=$('#gistInput').value.trim(); localStorage.setItem(CFG_TOKEN,state.token); localStorage.setItem(CFG_GIST,state.gistId); $('#settingsStatus').textContent='저장됨'; setTimeout(closeSettings,300); }
   $('#syncSettings').addEventListener('click', openSettings);
   $('#closeSettings').addEventListener('click', closeSettings);
   $('#saveSettings').addEventListener('click', saveSettings);
-  document.addEventListener('click', (e)=>{ if(e.target && e.target.id==='modalWrap') closeSettings(); });
+  document.addEventListener('click',(e)=>{ if(e.target && e.target.id==='modalWrap') closeSettings(); });
 
-  // 첫 렌더
-  applyTheme();
-  render();
+  // 태그칩 렌더 & 초기 목록 로드
+  renderTagChips();
+  resetAndRenderList();
+  setupInfiniteObservers(); // 무한스크롤 모드 대비 미리 연결
 });
+
+/* 목록 리셋 후 첫 배치(모드별) */
+function resetAndRenderList(){
+  $('#grid').innerHTML='';
+  state.offset=0;
+  $('#embedStatus').textContent='';
+  const filtered=currentFiltered();
+  $('#count').textContent=`총 ${filtered.length}개 · 0/${filtered.length}`;
+  $('#pageInfo').textContent='';
+  renderTagChips();
+
+  if(state.mode==='loadMore'){
+    $('#loadMore').style.display='inline-block';
+    appendBatch(filtered); // 첫 배치만 뿌림(임베드는 수동으로 embedAll 누르거나 Load More 직후 큐 사용)
+  } else {
+    $('#loadMore').style.display='none';
+    // 무한스크롤은 첫 배치를 자동 추가하고 임베드
+    const added = appendBatch(filtered);
+    if(added){
+      const newCards = Array.from(document.querySelectorAll('.card')).slice(-added);
+      embedQueue(newCards, Math.max(1, Math.min(8, +$('#embedConcurrency').value || 4)));
+    }
+  }
+}
 </script>
 </body>
 </html>

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>트윗 보관함 — 배치 로드 & 무한스크롤 + 자동접힘 헤더 + 다중태그 + 정렬</title>
+<title>트윗 보관함 — 페이지 보기 + 자동접힘 헤더(오버레이 열기) + 다중태그</title>
 
 <!-- X(Twitter) 임베드 SDK -->
 <script async src="https://platform.twitter.com/widgets.js"></script>
@@ -14,7 +14,7 @@
   *{box-sizing:border-box}
   body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Apple SD Gothic Neo,Noto Sans KR,sans-serif;background:var(--bg);color:var(--fg)}
 
-  /* === 깜빡임 없는 자동접힘 헤더 === */
+  /* 헤더: 기본은 sticky 접힘, 필요 시 overlay로 고정 노출 */
   header{
     position: sticky;
     top: 0;
@@ -32,6 +32,16 @@
     pointer-events: none;
     opacity: 0;
   }
+  /* 오버레이 모드: 스크롤 하단에서도 화면 위에 고정 노출 */
+  header.overlay{
+    position: fixed !important;
+    top: 0; left: 0; right: 0;
+    z-index: 9999;
+    max-height: var(--header-max, 600px) !important;
+    opacity: 1 !important;
+    pointer-events: auto !important;
+    box-shadow: 0 10px 24px rgba(0,0,0,.18);
+  }
   @media (prefers-reduced-motion: reduce){ header{ transition:none } }
 
   .wrap{max-width:1120px;margin:0 auto;padding:16px}
@@ -46,10 +56,6 @@
   .switch{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}
   .count{margin-left:auto}
 
-  /* (숨김) 예전 칩 바 */
-  #tagChips { display:none !important; }
-
-  main .wrap{padding-top:8px}
   #grid{display:grid;gap:16px;margin:16px 0 20px;grid-template-columns:repeat(auto-fill,minmax(360px,1fr))}
   .card{border:1px solid var(--border);border-radius:14px;background:var(--card);padding:12px;display:flex;flex-direction:column;gap:8px}
   .meta{display:flex;gap:8px;flex-wrap:wrap;align-items:center;font-size:12px;color:var(--muted)}
@@ -77,7 +83,7 @@
   .tag-count{font-size:12px;color:var(--muted)}
   .tag-item input{margin-right:8px}
 
-  /* 고정 퀵토글 버튼 — 항상 최상단, 클릭 보장 */
+  /* 퀵토글 버튼 */
   .quick-toggle{
     position: fixed;
     right: 12px;
@@ -96,16 +102,15 @@
   .quick-toggle:hover{ filter: brightness(1.05); }
   .quick-toggle[aria-expanded="true"]{ outline: 2px solid var(--accent); }
 
-  /* 모바일 컴팩트 */
-  @media (max-width: 640px) {
-    .wrap { padding: 8px 12px; }
-    h1 { font-size: 16px; margin-bottom: 4px; }
-    .row { gap: 10px; }
-    .sub { font-size: 11px; }
-    textarea, input, select, button { padding: 8px 10px; border-radius: 8px; }
-    .controls { gap: 6px; }
-    main .wrap { padding-top: 6px; }
-    .quick-toggle{ right: 10px; bottom: 10px; font-size: 12px; padding: 9px 11px; }
+  /* 페이지네이션 바 */
+  .pager{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .pager .info{font-size:12px;color:var(--muted)}
+  .pager button[disabled]{opacity:.5;cursor:not-allowed}
+
+  @media (max-width:640px){
+    .wrap{padding:8px 12px}
+    h1{font-size:16px;margin-bottom:4px}
+    .quick-toggle{ right:10px; bottom:10px; font-size:12px; padding:9px 11px }
   }
 </style>
 </head>
@@ -113,12 +118,13 @@
 
 <header>
   <div class="wrap">
-    <h1>트윗 보관함 <span class="sub">배치 로드 / 무한스크롤(윈도우링) + 자동저장 + 동기화</span></h1>
+    <h1>트윗 보관함 <span class="sub">페이지 보기 / 더 보기 / 무한스크롤 + 자동저장 + 동기화</span></h1>
 
     <!-- 모드/임베드 제어 -->
     <div class="controls" style="margin:6px 0">
-      <label class="switch"><input type="radio" name="mode" id="modeLoadMore" checked> 더 보기(배치 로드)</label>
-      <label class="switch"><input type="radio" name="mode" id="modeInfinite"> 무한 스크롤(윈도우링)</label>
+      <label class="switch"><input type="radio" name="mode" id="modePaginate" checked> 페이지</label>
+      <label class="switch"><input type="radio" name="mode" id="modeLoadMore"> 더 보기</label>
+      <label class="switch"><input type="radio" name="mode" id="modeInfinite"> 무한 스크롤</label>
       <label class="switch">동시에
         <input id="embedConcurrency" type="number" min="1" max="8" value="4" style="width:56px;margin:0 6px">개 임베드
       </label>
@@ -156,13 +162,28 @@ https://x.com/someone/status/456... #정책 | 개인 메모"></textarea>
           <button id="importJsonBtn">백업 불러오기</button>
           <input type="file" id="fileInput" accept="application/json" style="display:none" />
         </div>
-        <div class="controls" style="margin-top:6px">
+
+        <!-- 페이지 모드일 때만 보이는 페이지네이션 -->
+        <div class="controls pager" id="pagerBar" style="margin-top:6px">
+          <div class="sub">페이지 크기</div>
+          <select id="pageSize">
+            <option>6</option><option>9</option><option selected>12</option><option>18</option><option>24</option><option>36</option>
+          </select>
+          <button id="firstPage">« 처음</button>
+          <button id="prevPage">‹ 이전</button>
+          <span class="info" id="pageInfo">1 / 1</span>
+          <button id="nextPage">다음 ›</button>
+          <button id="lastPage">마지막 »</button>
+        </div>
+
+        <!-- 더 보기 전용 컨트롤 -->
+        <div class="controls" id="loadMoreBar" style="margin-top:6px;display:none">
           <div class="sub">배치 크기</div>
           <select id="batchSize">
             <option>6</option><option>9</option><option selected>12</option><option>18</option><option>24</option><option>36</option>
           </select>
           <button id="loadMore">더 보기</button>
-          <span class="sub" id="pageInfo"></span>
+          <span class="sub" id="moreInfo"></span>
         </div>
       </div>
     </div>
@@ -178,9 +199,6 @@ https://x.com/someone/status/456... #정책 | 개인 메모"></textarea>
         <option value="addedAsc">오래된순</option>
       </select>
     </div>
-
-    <!-- (숨김) 예전 칩 바 -->
-    <div id="tagChips" class="chips"></div>
   </div>
 </header>
 
@@ -191,7 +209,7 @@ https://x.com/someone/status/456... #정책 | 개인 메모"></textarea>
   </div>
 </main>
 
-<!-- 우하단 고정: 도구 열기 (onclick 폴백 포함) -->
+<!-- 우하단 고정: 도구 열기 (오버레이 토글 / 폴백 포함) -->
 <button
   id="headerQuickToggle"
   class="quick-toggle"
@@ -221,7 +239,7 @@ https://x.com/someone/status/456... #정책 | 개인 메모"></textarea>
 <div class="modal-backdrop" id="tagModal" style="display:none">
   <div class="modal">
     <h2>태그 필터</h2>
-    <div class="desc">아래에서 태그를 여러 개 선택하세요. 매칭 방식은 AND/OR 중 선택할 수 있어요. “무태그만”은 태그가 전혀 없는 항목만 표시합니다.</div>
+    <div class="desc">여러 태그를 고르고 AND/OR를 선택하세요. “무태그만”은 태그가 없는 항목만.</div>
 
     <div class="tag-toolbar">
       <input id="tagSearch" placeholder="태그 검색 (예: #우주)" style="flex:1" />
@@ -251,24 +269,22 @@ https://x.com/someone/status/456... #정책 | 개인 메모"></textarea>
 </div>
 
 <script>
-/* ========== 유틸 & 상태 ========== */
+/* ===== 유틸 & 상태 ===== */
 const $=(s,d=document)=>d.querySelector(s);
 const $$=(s,d=document)=>Array.from(d.querySelectorAll(s));
-const LS_KEY='tweet-shelf-v8';
+const LS_KEY='tweet-shelf-v9';
 const CFG_TOKEN='tweet-shelf-token';
 const CFG_GIST='tweet-shelf-gist';
-const LS_BATCH='tweet-shelf-batch';
 const LS_THEME='theme';
 const LS_SORT='tweet-shelf-sort';
 
 const debounce=(fn,ms=600)=>{let t;return(...a)=>{clearTimeout(t);t=setTimeout(()=>fn(...a),ms)}};
 const normalize=(url)=>{try{const u=new URL(url.trim());if(u.hostname==='x.com')u.hostname='twitter.com';return u.toString()}catch{return url.trim()}};
-const parseLine = (line) => {
-  const urlMatch = line.match(/https?:\/\/(twitter\.com|x\.com)\/\S+/i);
-  if (!urlMatch) return null;
-  const url = normalize(urlMatch[0]);
-  const tags = (line.match(/#[^\s#|]+/g) || []).map(s => s.toLowerCase());
-  const note = line.includes('|') ? line.split('|').slice(1).join('|').trim() : '';
+const parseLine=(line)=>{
+  const urlMatch=line.match(/https?:\/\/(twitter\.com|x\.com)\/\S+/i); if(!urlMatch) return null;
+  const url=normalize(urlMatch[0]);
+  const tags=(line.match(/#[^\s#|]+/g)||[]).map(s=>s.toLowerCase());
+  const note=line.includes('|')?line.split('|').slice(1).join('|').trim():'';
   return { url, tags, note };
 };
 const loadLocal=()=>{try{return JSON.parse(localStorage.getItem(LS_KEY)||'[]')}catch{return[]}};
@@ -279,33 +295,32 @@ const state={
   theme: localStorage.getItem(LS_THEME) || 'light',
   token: localStorage.getItem(CFG_TOKEN) || '',
   gistId: localStorage.getItem(CFG_GIST) || '',
-  // 다중 태그 필터 상태
-  activeTags: [],             // ['#a', '#b', ...] (소문자)
-  tagMatch: 'OR',             // 'AND' | 'OR'
-  onlyUntagged: false,        // true면 무태그만 표시
-  // 나머지
-  batch: +(localStorage.getItem(LS_BATCH) || 12),
-  offset: 0,
-  mode: 'loadMore',           // 'loadMore' | 'infinite'
+  activeTags: [],
+  tagMatch: 'OR',
+  onlyUntagged: false,
+  // 뷰 모드
+  mode: 'paginate',      // 'paginate' | 'loadMore' | 'infinite'
+  page: 1,
+  pageSize: 12,
+  batch: 12,             // loadMore 모드에서 사용
+  offset: 0,             // loadMore/infinite 에서 누적표시
   ioLoad: null,
   MAX_MOUNTED: 30,
   sortBy: localStorage.getItem(LS_SORT) || 'addedDesc'
 };
 
-/* ========== 테마 ========== */
+/* ===== 테마 & 마이그레이션 ===== */
 function applyTheme(){ document.documentElement.setAttribute('data-theme', state.theme); $('#darkToggle').checked = state.theme==='dark'; }
-
-/* ========== 등록일 마이그레이션 ========== */
 function migrateAddedAt(){
   const now=Date.now(); let changed=false;
   state.items.forEach((it,i)=>{ if(typeof it.addedAt!=='number'){ it.addedAt=now-i; changed=true; } });
   if(changed) saveLocal(state.items);
 }
 
-/* ========== 필터 & 정렬 ========== */
+/* ===== 필터 & 정렬 ===== */
 function currentFiltered(){
   const q=($('#q')?.value||'').toLowerCase().trim();
-  const tagsSel = state.activeTags; // 배열(소문자 '#tag')
+  const tagsSel = state.activeTags;
   const mode = state.tagMatch;
   const onlyUntagged = state.onlyUntagged;
 
@@ -313,22 +328,14 @@ function currentFiltered(){
     const itemTags = (it.tags||[]).map(t=>t.toLowerCase());
     const hay = [it.url, itemTags.join(' '), it.note||''].join(' ').toLowerCase();
 
-    // 검색어
     if (q && !hay.includes(q)) return false;
+    if (onlyUntagged) return itemTags.length===0;
 
-    // 무태그만이 체크되어 있으면, 태그가 비어있는 항목만
-    if (onlyUntagged) {
-      return itemTags.length === 0;
-    }
-
-    // 태그 다중 선택 로직
-    if (tagsSel.length > 0) {
-      if (mode === 'AND') {
-        const allIn = tagsSel.every(t => itemTags.includes(t));
-        if (!allIn) return false;
-      } else { // OR
-        const anyIn = tagsSel.some(t => itemTags.includes(t));
-        if (!anyIn) return false;
+    if (tagsSel.length>0){
+      if (mode==='AND'){
+        if (!tagsSel.every(t=>itemTags.includes(t))) return false;
+      } else {
+        if (!tagsSel.some(t=>itemTags.includes(t))) return false;
       }
     }
     return true;
@@ -341,7 +348,7 @@ function sortItems(arr){
   return arr;
 }
 
-/* ========== 카드 ========== */
+/* ===== 카드 ===== */
 function cardHTML(item){
   const tagText=(item.tags||[]).join(' ');
   const placeholder = `<div class="placeholder">임베드 안 함 · [보기]로 표시</div>`;
@@ -354,30 +361,25 @@ function cardHTML(item){
         <input class="tags" placeholder="#태그 공백구분" value="${tagText}" />
         <button class="view">보기</button>
       </div>
-      <div class="line">
-        <input class="note" placeholder="메모" value="${item.note||''}" />
-      </div>
+      <div class="line"><input class="note" placeholder="메모" value="${item.note||''}" /></div>
       <div class="footer">
         <a class="link" href="${item.url}" target="_blank" rel="noopener">${item.url}</a>
         <div class="actions"><button class="del">삭제</button></div>
       </div>
     </article>`;
 }
-function bindCardEvents(cards){
-  cards.forEach(item=>{
+function bindCardEvents(slice){
+  slice.forEach(item=>{
     const card=document.querySelector(`.card[data-id="${CSS.escape(item.url)}"]`);
     if(!card) return;
-    // 보기
     card.querySelector('.view').addEventListener('click', ()=> ensureEmbed(card));
-    // 삭제
     card.querySelector('.del').addEventListener('click', ()=>{
       const idx=state.items.findIndex(x=>x.url===item.url);
       if(idx===-1) return;
       if(!confirm('이 카드를 삭제할까요?')) return;
       state.items.splice(idx,1); saveLocal(state.items);
-      card.remove(); updateCounters();
+      card.remove(); updateCounters(); renderAfterDelete();
     });
-    // 자동저장
     const tagsInput=card.querySelector('.tags');
     const noteInput=card.querySelector('.note');
     const doSave=debounce(()=>{
@@ -393,7 +395,7 @@ function bindCardEvents(cards){
   });
 }
 
-/* ========== 임베드 ========== */
+/* ===== 임베드 ===== */
 function tweetIdFromUrl(url){ const m=url.match(/status\/(\d+)/); return m?m[1]:null; }
 function ensureEmbed(card){
   if(card.dataset.embedded==='1') return;
@@ -425,40 +427,70 @@ async function embedQueue(cards, concurrency){
   });
 }
 
-/* ========== 렌더 흐름 ========== */
+/* ===== 공통 렌더 헬퍼 ===== */
 function updateCounters(){
   const total = sortItems(currentFiltered()).length;
   const shown = $('#grid').children.length;
   $('#count').textContent = `총 ${total}개 · ${shown}/${total}`;
   $('#count2').textContent = `총 ${total}개 · ${shown}/${total}`;
 }
-function resetDOMList(){ $('#grid').innerHTML=''; state.offset=0; updateCounters(); }
 
-/* 배치 추가 */
+/* ===== 페이지 모드 ===== */
+function pageStats(){
+  const filtered=sortItems(currentFiltered());
+  const total=filtered.length;
+  const totalPages=Math.max(1, Math.ceil(total / state.pageSize));
+  const page=Math.min(state.page, totalPages);
+  return { filtered, total, totalPages, page };
+}
+function renderPage(){
+  const { filtered, total, totalPages, page } = pageStats();
+  state.page = page;
+  $('#grid').innerHTML='';
+  const start=(page-1)*state.pageSize;
+  const slice=filtered.slice(start, start+state.pageSize);
+  if(slice.length){
+    $('#grid').insertAdjacentHTML('beforeend', slice.map(cardHTML).join(''));
+    bindCardEvents(slice);
+    const cards = Array.from(document.querySelectorAll('.card'));
+    embedQueue(cards, Math.max(1, Math.min(8, +$('#embedConcurrency').value || 4)));
+  }
+  $('#pageInfo').textContent = `${page} / ${totalPages}`;
+  $('#firstPage').disabled = (page<=1);
+  $('#prevPage').disabled  = (page<=1);
+  $('#nextPage').disabled  = (page>=totalPages);
+  $('#lastPage').disabled  = (page>=totalPages);
+  updateCounters();
+}
+function renderAfterDelete(){
+  if(state.mode!=='paginate') return;
+  const { total, totalPages, page } = pageStats();
+  if(page>totalPages) state.page = totalPages;
+  renderPage();
+}
+
+/* ===== 더보기 모드 ===== */
 function appendBatch(filtered){
-  const BATCH=state.batch;
-  const slice=filtered.slice(state.offset, state.offset+BATCH);
+  const start=state.offset;
+  const slice=filtered.slice(start, start+state.batch);
   if(!slice.length) return 0;
-  const html = slice.map(cardHTML).join('');
-  $('#grid').insertAdjacentHTML('beforeend', html);
+  $('#grid').insertAdjacentHTML('beforeend', slice.map(cardHTML).join(''));
   bindCardEvents(slice);
   state.offset += slice.length;
   updateCounters();
   return slice.length;
 }
-
-/* 더 보기(배치) */
 async function onLoadMoreClick(){
   if(state.mode!=='loadMore') return;
   const filtered=sortItems(currentFiltered());
   const added = appendBatch(filtered);
-  if(!added){ $('#pageInfo').textContent='끝까지 표시되었습니다.'; return; }
+  if(!added){ $('#moreInfo').textContent='끝까지 표시되었습니다.'; return; }
   const cards = Array.from(document.querySelectorAll('.card')).slice(-added);
   const c = Math.max(1, Math.min(8, +$('#embedConcurrency').value || 4));
   await embedQueue(cards, c);
 }
 
-/* 무한스크롤(윈도우링) */
+/* ===== 무한 스크롤 ===== */
 function setupInfiniteObserver(){
   if(state.ioLoad){ state.ioLoad.disconnect(); state.ioLoad=null; }
   state.ioLoad = new IntersectionObserver(async entries=>{
@@ -486,204 +518,166 @@ function windowingTrim(){
   }
 }
 
-/* ========== 태그 모달 (다중 선택) ========== */
+/* ===== 태그 모달 ===== */
 function openTagModal(){
-  const modal=$('#tagModal');
-  const listWrap=$('#tagList');
-  const search=$('#tagSearch');
-  const matchSel=$('#tagMatch');
-  const onlyUntagged=$('#onlyUntagged');
+  const modal=$('#tagModal'), listWrap=$('#tagList'), search=$('#tagSearch');
+  const matchSel=$('#tagMatch'), onlyUntagged=$('#onlyUntagged');
   if(!modal||!listWrap||!search||!matchSel||!onlyUntagged) return;
 
-  // 현재 상태를 로컬 복사해서, 적용 전에 미리 편집
   let selected = new Set(state.activeTags);
   let tempMatch = state.tagMatch;
   let tempOnlyUntagged = state.onlyUntagged;
 
-  // 태그 목록 + 개수
-  const counts = new Map();
+  const counts=new Map();
   state.items.forEach(it => (it.tags||[]).forEach(t => counts.set(t.toLowerCase(), (counts.get(t.toLowerCase())||0)+1)));
-  const tags = Array.from(counts.entries()).sort((a,b)=>a[0].localeCompare(b[0]));
+  const tags=Array.from(counts.entries()).sort((a,b)=>a[0].localeCompare(b[0]));
 
   function renderList(filter=''){
-    const f = filter.toLowerCase().trim();
-    listWrap.innerHTML='';
+    const f=filter.toLowerCase().trim(); listWrap.innerHTML='';
     tags.forEach(([name,count])=>{
       if(f && !name.toLowerCase().includes(f)) return;
-      const row=document.createElement('label');
-      row.className='tag-item';
-      row.innerHTML = `
+      const row=document.createElement('label'); row.className='tag-item';
+      row.innerHTML=`
         <div style="display:flex;align-items:center">
           <input type="checkbox" ${selected.has(name)?'checked':''} />
           <span class="tag-name">${name}</span>
         </div>
-        <span class="tag-count">${count}개</span>
-      `;
-      const checkbox = row.querySelector('input');
-      checkbox.addEventListener('change', (e)=>{
+        <span class="tag-count">${count}개</span>`;
+      row.querySelector('input').addEventListener('change',(e)=>{
         if(e.target.checked) selected.add(name); else selected.delete(name);
       });
       listWrap.appendChild(row);
     });
   }
 
-  // 초기 세팅
-  matchSel.value = tempMatch;
-  onlyUntagged.checked = tempOnlyUntagged;
+  matchSel.value=tempMatch; onlyUntagged.checked=tempOnlyUntagged;
   search.value=''; renderList('');
 
-  // 동작
-  matchSel.onchange = (e)=> tempMatch = e.target.value;
-  onlyUntagged.onchange = (e)=> tempOnlyUntagged = !!e.target.checked;
-  search.oninput = (e)=> renderList(e.target.value);
+  matchSel.onchange=(e)=> tempMatch=e.target.value;
+  onlyUntagged.onchange=(e)=> tempOnlyUntagged=!!e.target.checked;
+  search.oninput=(e)=> renderList(e.target.value);
 
-  $('#tagSelectAll').onclick = ()=>{ selected = new Set(tags.map(t=>t[0])); renderList(search.value); };
-  $('#tagClearAll').onclick = ()=>{ selected = new Set(); renderList(search.value); };
-  $('#tagReset').onclick = ()=>{ selected = new Set(); tempMatch='OR'; tempOnlyUntagged=false; matchSel.value='OR'; onlyUntagged.checked=false; renderList(''); search.value=''; };
+  $('#tagSelectAll').onclick=()=>{ selected=new Set(tags.map(t=>t[0])); renderList(search.value); };
+  $('#tagClearAll').onclick=()=>{ selected=new Set(); renderList(search.value); };
+  $('#tagReset').onclick=()=>{ selected=new Set(); tempMatch='OR'; tempOnlyUntagged=false; matchSel.value='OR'; onlyUntagged.checked=false; renderList(''); search.value=''; };
 
-  $('#tagApply').onclick = ()=>{
-    state.activeTags = Array.from(selected);
-    state.tagMatch = tempMatch;
-    state.onlyUntagged = tempOnlyUntagged;
+  $('#tagApply').onclick=()=>{
+    state.activeTags=Array.from(selected);
+    state.tagMatch=tempMatch;
+    state.onlyUntagged=tempOnlyUntagged;
     updateTagFilterLabel();
-    close();
-    resetAndRenderList();
+    close(); refreshView();
   };
-  $('#tagCloseBtn').onclick = close;
+  $('#tagCloseBtn').onclick=close;
   modal.addEventListener('click',(e)=>{ if(e.target && e.target.id==='tagModal') close(); });
-
   function close(){ modal.style.display='none'; }
   modal.style.display='flex';
 }
 function updateTagFilterLabel(){
   const el=$('#tagFilterLabel'); if(!el) return;
-  const tags=state.activeTags;
-  const mode=state.tagMatch;
-  if(state.onlyUntagged){
-    el.textContent='무태그만';
-    return;
-  }
-  if(!tags.length){
-    el.textContent='전체';
-  }else{
-    const short = tags.slice(0,3).join(' ');
-    el.textContent = `${short}${tags.length>3?' …':''} · ${mode}`;
-  }
+  const tags=state.activeTags, mode=state.tagMatch;
+  if(state.onlyUntagged){ el.textContent='무태그만'; return; }
+  if(!tags.length){ el.textContent='전체'; }
+  else{ const short=tags.slice(0,3).join(' '); el.textContent=`${short}${tags.length>3?' …':''} · ${mode}`; }
 }
 
-/* ========== 자동 접힘 헤더 v4 (전역 토글 함수 + 확실한 버튼 연동) ========== */
-(function autoHideHeaderV4(){
+/* ===== 헤더 자동접힘 + 오버레이 토글 ===== */
+(function headerToggle(){
   function init(){
-    const header    = document.querySelector('header');
-    const toggleBtn = document.getElementById('headerQuickToggle');
-    if(!header || !toggleBtn) return;
-
+    const header=$('header'), btn=$('#headerQuickToggle');
+    if(!header||!btn) return;
     header.classList.add('auto-hide');
 
-    // 높이 측정 → CSS 변수
-    function updateHeaderMaxHeight(){
-      const prev=header.style.maxHeight;
-      header.style.maxHeight='none';
-      const h=header.scrollHeight;
-      header.style.maxHeight=prev;
+    function updateHeaderMax(){
+      const prev=header.style.maxHeight; header.style.maxHeight='none';
+      const h=header.scrollHeight; header.style.maxHeight=prev;
       header.style.setProperty('--header-max', h+'px');
     }
-    const ro=new ResizeObserver(updateHeaderMaxHeight);
-    ro.observe(header);
-    window.addEventListener('resize', updateHeaderMaxHeight);
-    requestAnimationFrame(updateHeaderMaxHeight);
-    window.addEventListener('load', updateHeaderMaxHeight);
+    const ro=new ResizeObserver(updateHeaderMax);
+    ro.observe(header); window.addEventListener('resize', updateHeaderMax);
+    requestAnimationFrame(updateHeaderMax); window.addEventListener('load', updateHeaderMax);
 
-    // 보이기/숨기기
-    function showHeader(){
-      header.classList.remove('hide');
-      toggleBtn.setAttribute('aria-expanded','true');
-      updateHeaderMaxHeight();
-    }
-    function hideHeader(){
-      header.classList.add('hide');
-      toggleBtn.setAttribute('aria-expanded','false');
-    }
+    function showHeader(){ header.classList.remove('hide'); btn.setAttribute('aria-expanded','true'); updateHeaderMax(); }
+    function hideHeader(){ header.classList.add('hide'); btn.setAttribute('aria-expanded','false'); header.classList.remove('overlay'); }
 
-    // 전역 토글 함수(HTML onclick 폴백이 이걸 호출)
+    // 전역 토글 (오버레이)
     window.__toggleHeader = function(){
-      const hidden = header.classList.contains('hide');
-      if(hidden) showHeader(); else hideHeader();
+      const hidden=header.classList.contains('hide');
+      if(hidden){
+        // 스크롤 아래면 오버레이로 열기, 맨 위면 일반 펼침
+        if(window.scrollY>0) header.classList.add('overlay');
+        showHeader();
+      }else{
+        hideHeader();
+      }
     };
 
     // 초기 상태
     if(window.scrollY<=0) showHeader(); else hideHeader();
 
-    // 스크롤: 아래로 내리면 접힘 / 맨 위면 펼침 (올린다고 자동으로 펴지지 않음)
+    // 스크롤: 아래로 내리면 접힘 / 맨 위면 펼침 (단, overlay가 켜져 있으면 유지)
     let lastY=window.scrollY, ticking=false;
     const DOWN_DELTA=8, HIDE_START=1;
     function onScroll(){
       if(ticking) return; ticking=true;
       requestAnimationFrame(()=>{
         const y=window.scrollY, dy=y-lastY;
-        if(y<=0){
-          showHeader();
-        }else if(dy>DOWN_DELTA && y>HIDE_START){
-          hideHeader();
+        if(header.classList.contains('overlay')){
+          // 오버레이 모드에서는 자동으로 닫지 않음 (버튼으로 닫기)
+        }else{
+          if(y<=0){ showHeader(); }
+          else if(dy>DOWN_DELTA && y>HIDE_START){ hideHeader(); }
         }
         lastY=y; ticking=false;
       });
     }
     window.addEventListener('scroll', onScroll, {passive:true});
 
-    // 버튼 이벤트(표준 경로)
-    toggleBtn.addEventListener('click', (ev)=>{
-      ev.preventDefault(); ev.stopPropagation();
-      window.__toggleHeader();
-    }, {passive:false});
-
-    // 문서 캡처 단계 위임(혹시 다른 요소가 가로채도 보장)
-    document.addEventListener('click', (e)=>{
-      const t=e.target;
-      if(t && (t.id==='headerQuickToggle' || (t.closest && t.closest('#headerQuickToggle')))){
-        e.preventDefault(); e.stopPropagation();
-        window.__toggleHeader();
-      }
-    }, {capture:true});
+    // 버튼 이벤트
+    btn.addEventListener('click', (e)=>{ e.preventDefault(); e.stopPropagation(); window.__toggleHeader(); }, {passive:false});
   }
-
-  if(document.readyState==='loading'){
-    document.addEventListener('DOMContentLoaded', init);
-  }else{
-    init();
-  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', init);
+  else init();
 })();
-</script>
 
-<script>
-/* ========== 초기화 & 이벤트 ========== */
+/* ===== 초기화 & 이벤트 ===== */
 document.addEventListener('DOMContentLoaded', ()=>{
   migrateAddedAt();
 
   // 테마
   applyTheme();
-  $('#darkToggle').addEventListener('change', e=>{ state.theme=e.target.checked?'dark':'light'; localStorage.setItem(LS_THEME,state.theme); applyTheme(); });
+  $('#darkToggle').addEventListener('change', e=>{ state.theme=e.target.checked?'dark':'light'; localStorage.setItem('theme',state.theme); applyTheme(); });
 
-  // 배치 크기
+  // 모드 전환
+  const toPaginate=()=>{ state.mode='paginate'; $('#pagerBar').style.display='flex'; $('#loadMoreBar').style.display='none'; refreshView(); };
+  const toLoadMore=()=>{ state.mode='loadMore'; $('#pagerBar').style.display='none'; $('#loadMoreBar').style.display='flex'; state.offset=0; $('#grid').innerHTML=''; refreshView(); };
+  const toInfinite=()=>{ state.mode='infinite'; $('#pagerBar').style.display='none'; $('#loadMoreBar').style.display='none'; state.offset=0; $('#grid').innerHTML=''; refreshView(); };
+  $('#modePaginate').addEventListener('change', toPaginate);
+  $('#modeLoadMore').addEventListener('change', toLoadMore);
+  $('#modeInfinite').addEventListener('change', toInfinite);
+
+  // 페이지 크기 / 배치 크기
+  $('#pageSize').value=String(state.pageSize);
+  $('#pageSize').addEventListener('change', e=>{ state.pageSize=+e.target.value; state.page=1; refreshView(); });
   $('#batchSize').value=String(state.batch);
-  $('#batchSize').addEventListener('change', e=>{ state.batch=+e.target.value; localStorage.setItem(LS_BATCH,String(state.batch)); resetAndRenderList(); });
+  $('#batchSize').addEventListener('change', e=>{ state.batch=+e.target.value; state.offset=0; refreshView(); });
 
-  // 모드
-  $('#modeLoadMore').addEventListener('change',()=>{ state.mode='loadMore'; resetAndRenderList(); $('#loadMore').style.display='inline-block'; });
-  $('#modeInfinite').addEventListener('change',()=>{ state.mode='infinite'; resetAndRenderList(); $('#loadMore').style.display='none'; });
+  // 페이지 이동
+  $('#firstPage').addEventListener('click', ()=>{ state.page=1; renderPage(); });
+  $('#prevPage').addEventListener('click', ()=>{ state.page=Math.max(1,state.page-1); renderPage(); });
+  $('#nextPage').addEventListener('click', ()=>{ const {totalPages}=pageStats(); state.page=Math.min(totalPages,state.page+1); renderPage(); });
+  $('#lastPage').addEventListener('click', ()=>{ const {totalPages}=pageStats(); state.page=totalPages; renderPage(); });
 
-  // 검색
-  $('#q').addEventListener('input', ()=> resetAndRenderList());
-
-  // 정렬
+  // 검색 / 정렬
+  $('#q').addEventListener('input', ()=>{ state.page=1; refreshView(); });
   $('#sortBy').value = state.sortBy;
-  $('#sortBy').addEventListener('change', (e)=>{ state.sortBy=e.target.value; localStorage.setItem(LS_SORT,state.sortBy); resetAndRenderList(); });
+  $('#sortBy').addEventListener('change', (e)=>{ state.sortBy=e.target.value; localStorage.setItem('tweet-shelf-sort',state.sortBy); state.page=1; refreshView(); });
 
   // 태그 모달
   $('#tagFilterBtn').addEventListener('click', openTagModal);
   updateTagFilterLabel();
 
-  // 가져오기(공통 태그 병합 + addedAt)
+  // 가져오기
   $('#importBtn').addEventListener('click', ()=>{
     const lines=$('#bulk').value.split('\n').map(s=>s.trim()).filter(Boolean);
     const common=($('#commonTags').value||'').trim().split(/\s+/).filter(Boolean).map(t=>t.startsWith('#')?t.toLowerCase():'#'+t.toLowerCase());
@@ -698,15 +692,14 @@ document.addEventListener('DOMContentLoaded', ()=>{
     if(!newOnes.length){ alert('추가할 URL이 없습니다.'); return; }
     state.items=[...newOnes, ...state.items];
     saveLocal(state.items);
-    $('#bulk').value='';
-    resetAndRenderList();
+    $('#bulk').value=''; state.page=1; refreshView();
   });
   $('#clearInput').addEventListener('click', ()=> $('#bulk').value='');
 
   // 더 보기
   $('#loadMore').addEventListener('click', onLoadMoreClick);
 
-  // 현재 표시분 임베드(수동 전체)
+  // 임베드 일괄
   $('#embedAll').addEventListener('click', async ()=>{
     const vis = Array.from(document.querySelectorAll('.card')).filter(c=>c.offsetParent!==null);
     const c = Math.max(1, Math.min(8, +$('#embedConcurrency').value || 4));
@@ -731,7 +724,7 @@ document.addEventListener('DOMContentLoaded', ()=>{
           note: typeof x.note==='string'?x.note:'',
           addedAt: typeof x.addedAt==='number' ? x.addedAt : Date.now()
         }));
-        state.items=cleaned; saveLocal(state.items); resetAndRenderList();
+        state.items=cleaned; saveLocal(state.items); state.page=1; refreshView();
       }catch{ alert('JSON 형식이 올바르지 않습니다.'); }
     };
     r.readAsText(f,'utf-8'); e.target.value='';
@@ -755,7 +748,7 @@ document.addEventListener('DOMContentLoaded', ()=>{
       state.items.forEach(x=>{ if(!map.has(x.url)) map.set(x.url,x); });
       state.items=Array.from(map.values());
       saveLocal(state.items);
-      resetAndRenderList();
+      state.page=1; refreshView();
       alert('클라우드에서 불러왔습니다.');
     }catch{ alert('Gist JSON 파싱 실패'); }
   }
@@ -769,28 +762,33 @@ document.addEventListener('DOMContentLoaded', ()=>{
   $('#cloudPull').addEventListener('click', cloudPull);
   $('#cloudPush').addEventListener('click', cloudPush);
 
-  // 초기 로드
-  resetAndRenderList();
+  // 초기 렌더
+  refreshView();
   setupInfiniteObserver();
 });
 
-/* 목록 리셋 후 첫 배치(모드별) */
-function resetAndRenderList(){
+/* ===== 뷰 리프레시 ===== */
+function refreshView(){
+  const filtered=sortItems(currentFiltered());
+  $('#count').textContent=`총 ${filtered.length}개`;
+  $('#count2').textContent=`총 ${filtered.length}개`;
   $('#grid').innerHTML='';
   state.offset=0;
-  $('#embedStatus').textContent='';
-  const filtered=sortItems(currentFiltered());
-  $('#count').textContent=`총 ${filtered.length}개 · 0/${filtered.length}`;
-  $('#count2').textContent=`총 ${filtered.length}개 · 0/${filtered.length}`;
-  $('#pageInfo').textContent='';
-  if(state.mode==='loadMore'){
-    $('#loadMore').style.display='inline-block';
-    appendBatch(filtered); // 첫 배치만 표시(임베드는 필요 시 수동)
-  } else {
-    $('#loadMore').style.display='none';
-    const added = appendBatch(filtered);
+  if(state.mode==='paginate'){
+    $('#pagerBar').style.display='flex'; $('#loadMoreBar').style.display='none';
+    renderPage();
+  }else if(state.mode==='loadMore'){
+    $('#pagerBar').style.display='none'; $('#loadMoreBar').style.display='flex';
+    const added=appendBatch(filtered);
     if(added){
-      const newCards = Array.from(document.querySelectorAll('.card')).slice(-added);
+      const newCards=Array.from(document.querySelectorAll('.card')).slice(-added);
+      embedQueue(newCards, Math.max(1, Math.min(8, +$('#embedConcurrency').value || 4)));
+    }
+  }else{ // infinite
+    $('#pagerBar').style.display='none'; $('#loadMoreBar').style.display='none';
+    const added=appendBatch(filtered);
+    if(added){
+      const newCards=Array.from(document.querySelectorAll('.card')).slice(-added);
       embedQueue(newCards, Math.max(1, Math.min(8, +$('#embedConcurrency').value || 4)));
     }
   }

@@ -3,45 +3,28 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>트윗 보관함 — 페이지 보기 + 자동접힘 헤더(오버레이) + 다중태그 + 동기화</title>
+<title>트윗 보관함 — 페이지 보기 + 고정 헤더 + 다중태그 + 동기화</title>
 
 <!-- X(Twitter) 임베드 SDK -->
 <script async src="https://platform.twitter.com/widgets.js"></script>
 
 <style>
-  :root { --bg:#fff; --fg:#1b1f23; --muted:#6a737d; --card:#fff; --border:#eaecef; --accent:#0366d6; }
+  :root { --bg:#fff; --fg:#1b1f23; --muted:#6a737d; --card:#fff; --border:#eaecef; --accent:#0366d6; --header-h: 64px; }
   [data-theme="dark"] { --bg:#0d1117; --fg:#c9d1d9; --muted:#8b949e; --card:#161b22; --border:#30363d; --accent:#58a6ff; }
   *{box-sizing:border-box}
   body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Apple SD Gothic Neo,Noto Sans KR,sans-serif;background:var(--bg);color:var(--fg)}
 
-  /* 헤더: sticky + 접힘, 필요 시 overlay로 고정 */
+  /* 헤더: 항상 최상단 고정 */
   header{
-    position: sticky;
-    top: 0;
-    z-index: 20;
-    background: var(--bg);
-    border-bottom: 1px solid var(--border);
-    transition: max-height 180ms ease, opacity 120ms ease;
-    will-change: max-height;
-    overflow: hidden;
-  }
-  header.auto-hide{ max-height: var(--header-max, 600px); }
-  header.auto-hide.hide{
-    max-height: 0;
-    border-bottom-color: transparent;
-    pointer-events: none;
-    opacity: 0;
-  }
-  header.overlay{
-    position: fixed !important;
+    position: fixed;
     top: 0; left: 0; right: 0;
     z-index: 9999;
-    max-height: var(--header-max, 600px) !important;
-    opacity: 1 !important;
-    pointer-events: auto !important;
-    box-shadow: 0 10px 24px rgba(0,0,0,.18);
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
   }
-  @media (prefers-reduced-motion: reduce){ header{ transition:none } }
+
+  /* 본문은 헤더 높이만큼 패딩을 줘서 가려지지 않게 */
+  main{ padding-top: var(--header-h); }
 
   .wrap{max-width:1120px;margin:0 auto;padding:16px}
   .row{display:grid;grid-template-columns:2fr 1fr;gap:16px}
@@ -57,7 +40,7 @@
 
   #grid{display:grid;gap:16px;margin:16px 0 20px;grid-template-columns:repeat(auto-fill,minmax(360px,1fr))}
   .card{border:1px solid var(--border);border-radius:14px;background:var(--card);padding:12px;display:flex;flex-direction:column;gap:8px}
-  .meta{display:flex;gap:8px;flex-wrap:wrap;align-items:center;font-size:12px;color:var(--muted)}
+  .meta{display:flex;gap:8px;flex-wrap:wrap;align-items:center;font-size:12px;color:var(--muted))}
   .line{display:flex;gap:8px;align-items:center}
   .line input{flex:1}
   .footer{display:flex;gap:8px;align-items:center;justify-content:space-between}
@@ -66,7 +49,7 @@
   [data-theme="dark"] .twitter-tweet-rendered{filter:brightness(0.92)}
 
   /* 모달 공통 */
-  .modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.4);display:none;align-items:center;justify-content:center;z-index:50}
+  .modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.4);display:none;align-items:center;justify-content:center;z-index:10000}
   .modal{background:var(--card);border:1px solid var(--border);border-radius:12px;max-width:620px;width:92%;padding:16px}
   .modal h2{margin:0 0 8px;font-size:16px}
   .modal .desc{font-size:12px;color:var(--muted);margin-bottom:8px}
@@ -100,7 +83,6 @@
     pointer-events: auto;
   }
   .quick-toggle:hover{ filter: brightness(1.05); }
-  .quick-toggle[aria-expanded="true"]{ outline: 2px solid var(--accent); }
 
   /* 페이지네이션 바 */
   .pager{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
@@ -217,7 +199,6 @@ https://x.com/someone/status/456... #정책 | 개인 메모"></textarea>
   class="quick-toggle"
   aria-expanded="false"
   title="도구"
-  onclick="window.__toggleHeader && window.__toggleHeader()"
 >도구</button>
 
 <!-- 동기화 모달 -->
@@ -578,70 +559,33 @@ function updateTagFilterLabel(){
   else{ const short=tags.slice(0,3).join(' '); el.textContent=`${short}${tags.length>3?' …':''} · ${mode}`; }
 }
 
-/* ===== 헤더 자동접힘 + 오버레이 토글(개선) ===== */
-(function headerToggle(){
+/* ===== 헤더 고정 높이 동기화 & '도구' 버튼 ===== */
+(function headerFixed(){
   function init(){
     const header=$('header'), btn=$('#headerQuickToggle');
     if(!header||!btn) return;
-    header.classList.add('auto-hide');
 
-    function updateHeaderMax(){
-      const prev=header.style.maxHeight; header.style.maxHeight='none';
-      const h=header.scrollHeight; header.style.maxHeight=prev;
-      header.style.setProperty('--header-max', h+'px');
+    // 헤더 높이 변동 시 main 패딩 자동 조정
+    function updateHeaderH(){
+      const prev = header.style.maxHeight;
+      header.style.maxHeight = 'none';
+      const h = header.scrollHeight;
+      header.style.maxHeight = prev || '';
+      document.documentElement.style.setProperty('--header-h', h + 'px');
     }
-    const ro=new ResizeObserver(updateHeaderMax);
-    ro.observe(header); window.addEventListener('resize', updateHeaderMax);
-    requestAnimationFrame(updateHeaderMax); window.addEventListener('load', updateHeaderMax);
+    const ro=new ResizeObserver(updateHeaderH);
+    ro.observe(header); window.addEventListener('resize', updateHeaderH);
+    requestAnimationFrame(updateHeaderH); window.addEventListener('load', updateHeaderH);
 
-    function showHeader(){ header.classList.remove('hide'); btn.setAttribute('aria-expanded','true'); updateHeaderMax(); }
-    function hideHeader(){ header.classList.add('hide'); btn.setAttribute('aria-expanded','false'); header.classList.remove('overlay'); }
-
-    function openOverlay(){
-      header.classList.add('overlay'); // 화면 어디서든 위에 띄우기
-      showHeader();
-      // 스크롤 이동 없음! (이전 폴백 제거)
+    // '도구' 버튼: 상단으로 스크롤(헤더는 항상 보임)
+    if(!btn.dataset.bound){
+      btn.addEventListener('click', (e)=>{
+        e.preventDefault();
+        e.stopPropagation();
+        window.scrollTo({top:0, behavior:'smooth'});
+      }, {passive:false});
+      btn.dataset.bound = '1';
     }
-
-    // 전역 토글
-    window.__toggleHeader = function(){
-      if(header.classList.contains('overlay') || !header.classList.contains('hide')){
-        // 오버레이 상태거나 펼쳐진 상태 → 닫기
-        hideHeader();
-      }else{
-        // 접힘 상태 → 오버레이로 열기
-        openOverlay();
-      }
-    };
-    // 과거 호환
-    window.__toggleTools = window.__toggleHeader;
-
-    // 초기 상태
-    if(window.scrollY<=0) showHeader(); else hideHeader();
-
-    // 스크롤: 아래로 내리면 접힘 / 맨 위면 펼침 (오버레이 중에는 유지)
-    let lastY=window.scrollY, ticking=false;
-    const DOWN_DELTA=8, HIDE_START=1;
-    function onScroll(){
-      if(ticking) return; ticking=true;
-      requestAnimationFrame(()=>{
-        const y=window.scrollY, dy=y-lastY;
-        if(header.classList.contains('overlay')){
-          // 오버레이 열려있으면 스크롤로는 건드리지 않음
-        }else{
-          if(y<=0){ showHeader(); }
-          else if(dy>DOWN_DELTA && y>HIDE_START){ hideHeader(); }
-        }
-        lastY=y; ticking=false;
-      });
-    }
-    window.addEventListener('scroll', onScroll, {passive:true});
-
-    // 버튼 이벤트
-    btn.addEventListener('click', (e)=>{ e.preventDefault(); e.stopPropagation(); window.__toggleHeader(); }, {passive:false});
-
-    // ESC로 닫기
-    document.addEventListener('keydown', (e)=>{ if(e.key==='Escape') hideHeader(); });
   }
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', init);
   else init();

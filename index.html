@@ -263,11 +263,12 @@ const LS_SORT='tweet-shelf-sort';
 
 const debounce=(fn,ms=600)=>{let t;return(...a)=>{clearTimeout(t);t=setTimeout(()=>fn(...a),ms)}};
 const normalize=(url)=>{try{const u=new URL(url.trim());if(u.hostname==='x.com')u.hostname='twitter.com';return u.toString()}catch{return url.trim()}};
-const parseLine=(line)=>{
-  const urlMatch=line.match(/https?:\/\/(twitter\.com|x\.com)\/\S+/i); if(!urlMatch) return null;
-  const url=normalize(urlMatch[0]);
-  const tags=(line.match(/#[^\s#|]+/g)||[]).map(s=>s.toLowerCase());
-  const note=line.includes('|')?line.split('|').slice[1]?.join('|')?.trim?.() ?? (line.includes('|')?line.split('|').slice(1).join('|').trim():'');
+const parseLine = (line) => {
+  const urlMatch = line.match(/https?:\/\/(twitter\.com|x\.com)\/\S+/i);
+  if (!urlMatch) return null;
+  const url = normalize(urlMatch[0]);
+  const tags = (line.match(/#[^\s#|]+/g) || []).map(s => s.toLowerCase());
+  const note = line.includes('|') ? line.split('|').slice(1).join('|').trim() : '';
   return { url, tags, note };
 };
 const loadLocal=()=>{try{return JSON.parse(localStorage.getItem(LS_KEY)||'[]')}catch{return[]}};

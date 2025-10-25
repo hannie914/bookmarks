@@ -578,7 +578,7 @@ function updateTagFilterLabel(){
   else{ const short=tags.slice(0,3).join(' '); el.textContent=`${short}${tags.length>3?' …':''} · ${mode}`; }
 }
 
-/* ===== 헤더 자동접힘 + 오버레이 토글 ===== */
+/* ===== 헤더 자동접힘(내릴 때만 숨김) + 오버레이 토글 ===== */
 (function headerToggle(){
   function init(){
     const header=$('header'), btn=$('#headerQuickToggle');
@@ -597,54 +597,46 @@ function updateTagFilterLabel(){
     ro.observe(header); window.addEventListener('resize', updateHeaderMax);
     requestAnimationFrame(updateHeaderMax); window.addEventListener('load', updateHeaderMax);
 
-    // 상태 전환 헬퍼
-    function showHeaderCompact(){ header.classList.remove('hide'); }
-    function hideHeaderCompact(){ header.classList.add('hide'); }
+    // 상태 전환
+    function showHeader(){ header.classList.remove('hide'); }
+    function hideHeader(){ header.classList.add('hide'); }
     function openOverlay(){
       header.classList.add('overlay');
-      showHeaderCompact();
+      showHeader();
       btn.setAttribute('aria-expanded','true');
-      // 스크롤 위치는 그대로(변경 없음)
+      // 스크롤 위치는 그대로
     }
     function closeOverlay(){
       header.classList.remove('overlay');
       btn.setAttribute('aria-expanded','false');
-      // 현재 스크롤 위치에 따라 접힘/펼침 결정
-      if (window.scrollY > 1) hideHeaderCompact();
-      else showHeaderCompact();
+      // 페이지가 최상단이면 보이게, 아니면 숨김 유지
+      if (window.scrollY <= 0) showHeader(); else hideHeader();
     }
 
-    // 글로벌 토글(버튼/키보드 공용)
+    // 전역 토글
     window.__toggleHeader = function(){
       if(header.classList.contains('overlay')) closeOverlay();
       else openOverlay();
     };
 
-    // 초기 상태: 상단이면 펼침, 아니면 접힘
-    if(window.scrollY<=0) showHeaderCompact(); else hideHeaderCompact();
+    // 초기 상태: 최상단이면 보임, 아니면 숨김
+    if(window.scrollY<=0) showHeader(); else hideHeader();
 
-    // 스크롤: 오버레이 중에는 무시. 아니면 아래로 내리면 숨기고, 위로 당기면 보이기
-    let lastY=window.scrollY, ticking=false;
-    const DOWN_DELTA=8, UP_DELTA=12, HIDE_START=1;
+    // 스크롤: 오버레이 중에는 무시. 최상단(<=0)일 때만 보이고, 그 외 구간은 항상 숨김.
     function onScroll(){
-      if(ticking) return; ticking=true;
-      requestAnimationFrame(()=>{
-        const y=window.scrollY, dy=y-lastY;
-        if(header.classList.contains('overlay')){
-          // 오버레이 중 스크롤은 헤더 상태에 영향 주지 않음
-        }else{
-          if(y<=0){ showHeaderCompact(); }
-          else if(dy>DOWN_DELTA && y>HIDE_START){ hideHeaderCompact(); }
-          else if(dy<-UP_DELTA){ showHeaderCompact(); }
-        }
-        lastY=y; ticking=false;
-      });
+      if(header.classList.contains('overlay')) return;
+      if(window.scrollY <= 0) showHeader();
+      else hideHeader();
     }
     window.addEventListener('scroll', onScroll, {passive:true});
 
-    // 버튼: 오버레이 토글(스크롤 위치 불변)
+    // 버튼: 오버레이 토글(스크롤 이동 없음)
     if(!btn.dataset.bound){
-      btn.addEventListener('click', (e)=>{ e.preventDefault(); e.stopPropagation(); window.__toggleHeader(); }, {passive:false});
+      btn.addEventListener('click', (e)=>{
+        e.preventDefault();
+        e.stopPropagation();
+        window.__toggleHeader();
+      }, {passive:false});
       btn.dataset.bound='1';
     }
 
@@ -827,6 +819,7 @@ document.addEventListener('DOMContentLoaded', ()=>{
 function refreshView(){
   const filtered=sortItems(currentFiltered());
   $('#count').textContent=`총 ${filtered.length}개`;
+  '#count2' in window ? null : null;
   $('#count2').textContent=`총 ${filtered.length}개`;
   $('#grid').innerHTML='';
   state.offset=0;

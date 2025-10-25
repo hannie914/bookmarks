@@ -191,8 +191,14 @@ https://x.com/someone/status/456... #정책 | 개인 메모"></textarea>
   </div>
 </main>
 
-<!-- 우하단 고정: 도구 열기 (문서 맨 끝에 둬서 항상 클릭 가능) -->
-<button id="headerQuickToggle" class="quick-toggle" aria-expanded="false" title="도구 열기">도구 열기</button>
+<!-- 우하단 고정: 도구 열기 (onclick 폴백 추가) -->
+<button
+  id="headerQuickToggle"
+  class="quick-toggle"
+  aria-expanded="false"
+  title="도구 열기"
+  onclick="window.__toggleHeader && window.__toggleHeader()"
+>도구 열기</button>
 
 <!-- 동기화 모달 -->
 <div class="modal-backdrop" id="modalWrap" style="display:none">
@@ -564,16 +570,17 @@ function updateTagFilterLabel(){
   }
 }
 
-/* ========== 자동 접힘 헤더 v3 (버튼 우선 토글, 스크롤은 접기만) ========== */
-(function autoHideHeaderV3(){
+<script>
+/* ========== 자동 접힘 헤더 v4 (전역 토글 함수 + 확실한 버튼 연동) ========== */
+(function autoHideHeaderV4(){
   function init(){
-    const header   = document.querySelector('header');
-    const toggleBtn= document.getElementById('headerQuickToggle');
+    const header    = document.querySelector('header');
+    const toggleBtn = document.getElementById('headerQuickToggle');
     if(!header || !toggleBtn) return;
 
     header.classList.add('auto-hide');
 
-    // 높이 측정 후 CSS 변수 반영
+    // 높이 측정 → CSS 변수
     function updateHeaderMaxHeight(){
       const prev=header.style.maxHeight;
       header.style.maxHeight='none';
@@ -598,10 +605,16 @@ function updateTagFilterLabel(){
       toggleBtn.setAttribute('aria-expanded','false');
     }
 
-    // 초기 상태: 맨 위면 펼침, 아니면 접힘
+    // 전역 토글 함수(HTML onclick 폴백이 이걸 호출)
+    window.__toggleHeader = function(){
+      const hidden = header.classList.contains('hide');
+      if(hidden) showHeader(); else hideHeader();
+    };
+
+    // 초기 상태
     if(window.scrollY<=0) showHeader(); else hideHeader();
 
-    // 스크롤: 아래로 충분히 내리면 접힘. (올려도 자동으로 펴지지 않음) / 맨 위면 자동 펼침
+    // 스크롤: 아래로 내리면 접힘 / 맨 위면 펼침 (올린다고 자동으로 펴지지 않음)
     let lastY=window.scrollY, ticking=false;
     const DOWN_DELTA=8, HIDE_START=1;
     function onScroll(){
@@ -609,29 +622,27 @@ function updateTagFilterLabel(){
       requestAnimationFrame(()=>{
         const y=window.scrollY, dy=y-lastY;
         if(y<=0){
-          showHeader();      // 맨 위: 자동 펼침
+          showHeader();
         }else if(dy>DOWN_DELTA && y>HIDE_START){
-          hideHeader();      // 아래로 내리는 중: 자동 접힘
+          hideHeader();
         }
         lastY=y; ticking=false;
       });
     }
     window.addEventListener('scroll', onScroll, {passive:true});
 
-    // 버튼: 언제든 즉시 토글 (펼친 뒤 다시 내리면 자동 접힘)
+    // 버튼 이벤트(표준 경로)
     toggleBtn.addEventListener('click', (ev)=>{
       ev.preventDefault(); ev.stopPropagation();
-      const hidden=header.classList.contains('hide');
-      if(hidden) showHeader(); else hideHeader();
+      window.__toggleHeader();
     }, {passive:false});
 
-    // 혹시 다른 요소가 클릭을 가로채더라도, 문서 위임으로 한 번 더 보장
+    // 문서 캡처 단계 위임(혹시 다른 요소가 가로채도 보장)
     document.addEventListener('click', (e)=>{
       const t=e.target;
       if(t && (t.id==='headerQuickToggle' || (t.closest && t.closest('#headerQuickToggle')))){
         e.preventDefault(); e.stopPropagation();
-        const hidden=header.classList.contains('hide');
-        if(hidden) showHeader(); else hideHeader();
+        window.__toggleHeader();
       }
     }, {capture:true});
   }
@@ -642,6 +653,8 @@ function updateTagFilterLabel(){
     init();
   }
 })();
+</script>
+
 
 /* ========== 초기화 & 이벤트 ========== */
 document.addEventListener('DOMContentLoaded', ()=>{

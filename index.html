@@ -77,12 +77,12 @@
   .tag-count{font-size:12px;color:var(--muted)}
   .tag-item input{margin-right:8px}
 
-  /* 고정 퀵토글 버튼 */
+  /* 고정 퀵토글 버튼 — 항상 최상단, 클릭 보장 */
   .quick-toggle{
     position: fixed;
     right: 12px;
     bottom: 14px;
-    z-index: 60;
+    z-index: 2147483647;
     padding: 10px 12px;
     border-radius: 999px;
     border: 1px solid var(--border);
@@ -91,6 +91,7 @@
     box-shadow: 0 4px 12px rgba(0,0,0,.12);
     cursor: pointer;
     font-size: 13px;
+    pointer-events: auto;
   }
   .quick-toggle:hover{ filter: brightness(1.05); }
   .quick-toggle[aria-expanded="true"]{ outline: 2px solid var(--accent); }
@@ -109,9 +110,6 @@
 </style>
 </head>
 <body>
-
-<!-- 우하단 고정: 도구 열기 -->
-<button id="headerQuickToggle" class="quick-toggle" aria-expanded="false" title="도구 열기">도구 열기</button>
 
 <header>
   <div class="wrap">
@@ -192,6 +190,9 @@ https://x.com/someone/status/456... #정책 | 개인 메모"></textarea>
     <div id="sentinel" style="height:1px"></div>
   </div>
 </main>
+
+<!-- 우하단 고정: 도구 열기 (문서 맨 끝에 둬서 항상 클릭 가능) -->
+<button id="headerQuickToggle" class="quick-toggle" aria-expanded="false" title="도구 열기">도구 열기</button>
 
 <!-- 동기화 모달 -->
 <div class="modal-backdrop" id="modalWrap" style="display:none">
@@ -316,7 +317,6 @@ function currentFiltered(){
     // 태그 다중 선택 로직
     if (tagsSel.length > 0) {
       if (mode === 'AND') {
-        // 모두 포함
         const allIn = tagsSel.every(t => itemTags.includes(t));
         if (!allIn) return false;
       } else { // OR
@@ -564,74 +564,83 @@ function updateTagFilterLabel(){
   }
 }
 
-/* ========== 자동 접힘 헤더 v2 (스크롤 중엔 버튼으로만 펼침) ========== */
-(function autoHideHeaderV2(){
-  const header = document.querySelector('header');
-  const toggleBtn = document.getElementById('headerQuickToggle');
-  if (!header || !toggleBtn) return;
+/* ========== 자동 접힘 헤더 v3 (버튼 우선 토글, 스크롤은 접기만) ========== */
+(function autoHideHeaderV3(){
+  function init(){
+    const header   = document.querySelector('header');
+    const toggleBtn= document.getElementById('headerQuickToggle');
+    if(!header || !toggleBtn) return;
 
-  header.classList.add('auto-hide');
+    header.classList.add('auto-hide');
 
-  function updateHeaderMaxHeight() {
-    const prev = header.style.maxHeight;
-    header.style.maxHeight = 'none';
-    const h = header.scrollHeight;
-    header.style.maxHeight = prev;
-    header.style.setProperty('--header-max', h + 'px');
-  }
-  const ro = new ResizeObserver(updateHeaderMaxHeight);
-  ro.observe(header);
-  window.addEventListener('resize', updateHeaderMaxHeight);
-  requestAnimationFrame(updateHeaderMaxHeight);
-  window.addEventListener('load', updateHeaderMaxHeight);
+    // 높이 측정 후 CSS 변수 반영
+    function updateHeaderMaxHeight(){
+      const prev=header.style.maxHeight;
+      header.style.maxHeight='none';
+      const h=header.scrollHeight;
+      header.style.maxHeight=prev;
+      header.style.setProperty('--header-max', h+'px');
+    }
+    const ro=new ResizeObserver(updateHeaderMaxHeight);
+    ro.observe(header);
+    window.addEventListener('resize', updateHeaderMaxHeight);
+    requestAnimationFrame(updateHeaderMaxHeight);
+    window.addEventListener('load', updateHeaderMaxHeight);
 
-  let lastY = window.scrollY;
-  let ticking = false;
+    // 보이기/숨기기
+    function showHeader(){
+      header.classList.remove('hide');
+      toggleBtn.setAttribute('aria-expanded','true');
+      updateHeaderMaxHeight();
+    }
+    function hideHeader(){
+      header.classList.add('hide');
+      toggleBtn.setAttribute('aria-expanded','false');
+    }
 
-  const DOWN_DELTA = 8;
-  const HIDE_START = 1;
+    // 초기 상태: 맨 위면 펼침, 아니면 접힘
+    if(window.scrollY<=0) showHeader(); else hideHeader();
 
-  function showHeader() {
-    header.classList.remove('hide');
-    toggleBtn.setAttribute('aria-expanded', 'true');
-    updateHeaderMaxHeight();
-  }
-  function hideHeader() {
-    header.classList.add('hide');
-    toggleBtn.setAttribute('aria-expanded', 'false');
-  }
-
-  // 초기: 맨 위면 펼침, 아니면 접힘
-  if (window.scrollY <= 0) showHeader(); else hideHeader();
-
-  // 스크롤: 아래로 내리면 접힘 / 맨 위면 펼침. (올린다고 자동 펼침 안 함)
-  function onScroll() {
-    if (ticking) return;
-    ticking = true;
-    requestAnimationFrame(() => {
-      const y = window.scrollY;
-      const dy = y - lastY;
-
-      if (y <= 0) {
-        showHeader();
-      } else {
-        if (dy > DOWN_DELTA && y > HIDE_START) {
-          hideHeader();
+    // 스크롤: 아래로 충분히 내리면 접힘. (올려도 자동으로 펴지지 않음) / 맨 위면 자동 펼침
+    let lastY=window.scrollY, ticking=false;
+    const DOWN_DELTA=8, HIDE_START=1;
+    function onScroll(){
+      if(ticking) return; ticking=true;
+      requestAnimationFrame(()=>{
+        const y=window.scrollY, dy=y-lastY;
+        if(y<=0){
+          showHeader();      // 맨 위: 자동 펼침
+        }else if(dy>DOWN_DELTA && y>HIDE_START){
+          hideHeader();      // 아래로 내리는 중: 자동 접힘
         }
-        // 위로 올려도 자동펼침 없음(버튼으로만 펼침)
+        lastY=y; ticking=false;
+      });
+    }
+    window.addEventListener('scroll', onScroll, {passive:true});
+
+    // 버튼: 언제든 즉시 토글 (펼친 뒤 다시 내리면 자동 접힘)
+    toggleBtn.addEventListener('click', (ev)=>{
+      ev.preventDefault(); ev.stopPropagation();
+      const hidden=header.classList.contains('hide');
+      if(hidden) showHeader(); else hideHeader();
+    }, {passive:false});
+
+    // 혹시 다른 요소가 클릭을 가로채더라도, 문서 위임으로 한 번 더 보장
+    document.addEventListener('click', (e)=>{
+      const t=e.target;
+      if(t && (t.id==='headerQuickToggle' || (t.closest && t.closest('#headerQuickToggle')))){
+        e.preventDefault(); e.stopPropagation();
+        const hidden=header.classList.contains('hide');
+        if(hidden) showHeader(); else hideHeader();
       }
-
-      lastY = y;
-      ticking = false;
-    });
+    }, {capture:true});
   }
-  window.addEventListener('scroll', onScroll, { passive: true });
 
-  // 버튼: 언제든 즉시 토글 (펼친 뒤 스크롤 내리면 다시 자동 접힘)
-  toggleBtn.addEventListener('click', () => {
-    const isHidden = header.classList.contains('hide');
-    if (isHidden) showHeader(); else hideHeader();
-  });
+  if(document.readyState==='loading'){
+    document.addEventListener('DOMContentLoaded', init);
+  }else{
+    init();
+  }
 })();
 
 /* ========== 초기화 & 이벤트 ========== */

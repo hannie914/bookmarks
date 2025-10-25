@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>트윗 보관함 — 배치 로드 & 무한스크롤(윈도우링) + 자동접힘 헤더 + 태그모달 + 정렬</title>
+<title>트윗 보관함 — 배치 로드 & 무한스크롤 + 자동접힘 헤더 + 다중태그 + 정렬</title>
 
 <!-- X(Twitter) 임베드 SDK -->
 <script async src="https://platform.twitter.com/widgets.js"></script>
@@ -19,18 +19,18 @@
     position: sticky;
     top: 0;
     z-index: 20;
-    background: var(--bg);              /* 반투명 제거 */
+    background: var(--bg);
     border-bottom: 1px solid var(--border);
-    transition: max-height 180ms ease;  /* 높이만 애니메이션 */
+    transition: max-height 180ms ease;
     will-change: max-height;
-    overflow: hidden;                   /* 접힐 때 내부를 깔끔히 숨김 */
+    overflow: hidden;
   }
   header.auto-hide{ max-height: var(--header-max, 600px); }
   header.auto-hide.hide{
     max-height: 0;
     border-bottom-color: transparent;
     pointer-events: none;
-    opacity: 0;                         /* 잔상/깜빡임 방지 */
+    opacity: 0;
   }
   @media (prefers-reduced-motion: reduce){ header{ transition:none } }
 
@@ -45,7 +45,8 @@
   .controls{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
   .switch{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}
   .count{margin-left:auto}
-  /* 예전 칩 바는 숨김(이제 모달 사용) */
+
+  /* (숨김) 예전 칩 바 */
   #tagChips { display:none !important; }
 
   main .wrap{padding-top:8px}
@@ -61,16 +62,38 @@
 
   /* 모달 공통 */
   .modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.4);display:none;align-items:center;justify-content:center;z-index:50}
-  .modal{background:var(--card);border:1px solid var(--border);border-radius:12px;max-width:560px;width:92%;padding:16px}
+  .modal{background:var(--card);border:1px solid var(--border);border-radius:12px;max-width:620px;width:92%;padding:16px}
   .modal h2{margin:0 0 8px;font-size:16px}
   .modal .desc{font-size:12px;color:var(--muted);margin-bottom:8px}
   .modal .row{display:grid;grid-template-columns:1fr;gap:10px}
 
   /* 태그 모달 리스트 */
-  .tag-item{display:flex;align-items:center;justify-content:space-between;padding:8px 10px;border:1px solid var(--border);border-radius:10px;margin-bottom:8px;background:var(--card);cursor:pointer}
-  .tag-item:hover{filter:brightness(1.03)}
+  .tag-toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0}
+  .tag-list{max-height:340px;overflow:auto;border:1px solid var(--border);border-radius:10px;padding:8px;background:var(--card)}
+  .tag-item{display:flex;align-items:center;justify-content:space-between;padding:8px;border-radius:8px;cursor:pointer}
+  .tag-item:hover{background:rgba(0,0,0,.04)}
+  [data-theme="dark"] .tag-item:hover{background:rgba(255,255,255,.06)}
   .tag-name{font-size:13px}
   .tag-count{font-size:12px;color:var(--muted)}
+  .tag-item input{margin-right:8px}
+
+  /* 고정 퀵토글 버튼 */
+  .quick-toggle{
+    position: fixed;
+    right: 12px;
+    bottom: 14px;
+    z-index: 60;
+    padding: 10px 12px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: var(--card);
+    color: var(--fg);
+    box-shadow: 0 4px 12px rgba(0,0,0,.12);
+    cursor: pointer;
+    font-size: 13px;
+  }
+  .quick-toggle:hover{ filter: brightness(1.05); }
+  .quick-toggle[aria-expanded="true"]{ outline: 2px solid var(--accent); }
 
   /* 모바일 컴팩트 */
   @media (max-width: 640px) {
@@ -81,10 +104,14 @@
     textarea, input, select, button { padding: 8px 10px; border-radius: 8px; }
     .controls { gap: 6px; }
     main .wrap { padding-top: 6px; }
+    .quick-toggle{ right: 10px; bottom: 10px; font-size: 12px; padding: 9px 11px; }
   }
 </style>
 </head>
 <body>
+
+<!-- 우하단 고정: 도구 열기 -->
+<button id="headerQuickToggle" class="quick-toggle" aria-expanded="false" title="도구 열기">도구 열기</button>
 
 <header>
   <div class="wrap">
@@ -183,20 +210,35 @@ https://x.com/someone/status/456... #정책 | 개인 메모"></textarea>
   </div>
 </div>
 
-<!-- 태그 선택 모달 -->
+<!-- 태그 선택 모달 (다중 선택 + AND/OR + 무태그만) -->
 <div class="modal-backdrop" id="tagModal" style="display:none">
-  <div class="modal" style="max-width:560px">
-    <h2>태그 선택</h2>
-    <div class="desc">검색으로 태그를 좁혀보세요. 하나를 선택하면 필터가 적용됩니다.</div>
-    <input id="tagSearch" placeholder="태그 검색 (예: #우주)" />
-    <div id="tagList" style="max-height:320px; overflow:auto; margin-top:8px"></div>
+  <div class="modal">
+    <h2>태그 필터</h2>
+    <div class="desc">아래에서 태그를 여러 개 선택하세요. 매칭 방식은 AND/OR 중 선택할 수 있어요. “무태그만”은 태그가 전혀 없는 항목만 표시합니다.</div>
+
+    <div class="tag-toolbar">
+      <input id="tagSearch" placeholder="태그 검색 (예: #우주)" style="flex:1" />
+      <label class="switch">매칭
+        <select id="tagMatch">
+          <option value="AND">AND(모두 포함)</option>
+          <option value="OR" selected>OR(하나 이상)</option>
+        </select>
+      </label>
+      <label class="switch"><input type="checkbox" id="onlyUntagged"> 무태그만</label>
+    </div>
+
+    <div class="tag-list" id="tagList"></div>
+
     <div class="controls" style="margin-top:10px; justify-content:space-between">
       <div>
-        <button id="tagAllBtn">전체</button>
-        <button id="tagNoneBtn">태그 없음</button>
-        <button id="tagClearBtn">선택 해제</button>
+        <button id="tagSelectAll">전체 선택</button>
+        <button id="tagClearAll">전체 해제</button>
+        <button id="tagReset">필터 초기화</button>
       </div>
-      <div><button id="tagCloseBtn">닫기</button></div>
+      <div>
+        <button id="tagApply">적용</button>
+        <button id="tagCloseBtn">닫기</button>
+      </div>
     </div>
   </div>
 </div>
@@ -205,13 +247,12 @@ https://x.com/someone/status/456... #정책 | 개인 메모"></textarea>
 /* ========== 유틸 & 상태 ========== */
 const $=(s,d=document)=>d.querySelector(s);
 const $$=(s,d=document)=>Array.from(d.querySelectorAll(s));
-const LS_KEY='tweet-shelf-v7';
+const LS_KEY='tweet-shelf-v8';
 const CFG_TOKEN='tweet-shelf-token';
 const CFG_GIST='tweet-shelf-gist';
 const LS_BATCH='tweet-shelf-batch';
 const LS_THEME='theme';
 const LS_SORT='tweet-shelf-sort';
-const UNTAGGED='__UNTAGGED__';
 
 const debounce=(fn,ms=600)=>{let t;return(...a)=>{clearTimeout(t);t=setTimeout(()=>fn(...a),ms)}};
 const normalize=(url)=>{try{const u=new URL(url.trim());if(u.hostname==='x.com')u.hostname='twitter.com';return u.toString()}catch{return url.trim()}};
@@ -230,19 +271,21 @@ const state={
   theme: localStorage.getItem(LS_THEME) || 'light',
   token: localStorage.getItem(CFG_TOKEN) || '',
   gistId: localStorage.getItem(CFG_GIST) || '',
-  activeTag: null, // null|tag|UNTAGGED
+  // 다중 태그 필터 상태
+  activeTags: [],             // ['#a', '#b', ...] (소문자)
+  tagMatch: 'OR',             // 'AND' | 'OR'
+  onlyUntagged: false,        // true면 무태그만 표시
+  // 나머지
   batch: +(localStorage.getItem(LS_BATCH) || 12),
-  offset: 0,          // 지금까지 렌더한 개수
-  mode: 'loadMore',   // 'loadMore' | 'infinite'
-  ioLoad: null,       // 하단 로더
-  MAX_MOUNTED: 30,    // 윈도우링 상한
+  offset: 0,
+  mode: 'loadMore',           // 'loadMore' | 'infinite'
+  ioLoad: null,
+  MAX_MOUNTED: 30,
   sortBy: localStorage.getItem(LS_SORT) || 'addedDesc'
 };
 
-/* ========== 테마 & (숨김) 칩 ========== */
+/* ========== 테마 ========== */
 function applyTheme(){ document.documentElement.setAttribute('data-theme', state.theme); $('#darkToggle').checked = state.theme==='dark'; }
-function uniqueTags(){ const set=new Set(); state.items.forEach(it=>(it.tags||[]).forEach(t=>set.add(t))); return Array.from(set).sort((a,b)=>a.localeCompare(b)); }
-function renderTagChips(){ /* 칩은 안 씀(모달 사용) */ }
 
 /* ========== 등록일 마이그레이션 ========== */
 function migrateAddedAt(){
@@ -254,16 +297,34 @@ function migrateAddedAt(){
 /* ========== 필터 & 정렬 ========== */
 function currentFiltered(){
   const q=($('#q')?.value||'').toLowerCase().trim();
-  const active=state.activeTag;
+  const tagsSel = state.activeTags; // 배열(소문자 '#tag')
+  const mode = state.tagMatch;
+  const onlyUntagged = state.onlyUntagged;
+
   return state.items.filter(it=>{
-    const tagText=(it.tags||[]).join(' ');
-    const note=it.note||'';
-    const hay=[it.url, tagText, note].join(' ').toLowerCase();
-    const qok=!q||hay.includes(q);
-    let tok=true;
-    if(active===UNTAGGED) tok=(it.tags||[]).length===0;
-    else if(active) tok=(it.tags||[]).map(t=>t.toLowerCase()).includes(active);
-    return qok && tok;
+    const itemTags = (it.tags||[]).map(t=>t.toLowerCase());
+    const hay = [it.url, itemTags.join(' '), it.note||''].join(' ').toLowerCase();
+
+    // 검색어
+    if (q && !hay.includes(q)) return false;
+
+    // 무태그만이 체크되어 있으면, 태그가 비어있는 항목만
+    if (onlyUntagged) {
+      return itemTags.length === 0;
+    }
+
+    // 태그 다중 선택 로직
+    if (tagsSel.length > 0) {
+      if (mode === 'AND') {
+        // 모두 포함
+        const allIn = tagsSel.every(t => itemTags.includes(t));
+        if (!allIn) return false;
+      } else { // OR
+        const anyIn = tagsSel.some(t => itemTags.includes(t));
+        if (!anyIn) return false;
+      }
+    }
+    return true;
   });
 }
 function sortItems(arr){
@@ -418,82 +479,159 @@ function windowingTrim(){
   }
 }
 
-/* ========== 태그 모달 ========== */
+/* ========== 태그 모달 (다중 선택) ========== */
 function openTagModal(){
-  const modal=$('#tagModal'), listWrap=$('#tagList'), search=$('#tagSearch');
-  if(!modal||!listWrap||!search) return;
-  const counts=new Map(); state.items.forEach(it=>(it.tags||[]).forEach(t=>counts.set(t,(counts.get(t)||0)+1)));
-  const tags=Array.from(counts.entries()).sort((a,b)=>a[0].localeCompare(b[0]));
+  const modal=$('#tagModal');
+  const listWrap=$('#tagList');
+  const search=$('#tagSearch');
+  const matchSel=$('#tagMatch');
+  const onlyUntagged=$('#onlyUntagged');
+  if(!modal||!listWrap||!search||!matchSel||!onlyUntagged) return;
 
-  function renderList(text=''){
-    const f=text.toLowerCase().trim(); listWrap.innerHTML='';
+  // 현재 상태를 로컬 복사해서, 적용 전에 미리 편집
+  let selected = new Set(state.activeTags);
+  let tempMatch = state.tagMatch;
+  let tempOnlyUntagged = state.onlyUntagged;
+
+  // 태그 목록 + 개수
+  const counts = new Map();
+  state.items.forEach(it => (it.tags||[]).forEach(t => counts.set(t.toLowerCase(), (counts.get(t.toLowerCase())||0)+1)));
+  const tags = Array.from(counts.entries()).sort((a,b)=>a[0].localeCompare(b[0]));
+
+  function renderList(filter=''){
+    const f = filter.toLowerCase().trim();
+    listWrap.innerHTML='';
     tags.forEach(([name,count])=>{
       if(f && !name.toLowerCase().includes(f)) return;
-      const row=document.createElement('div'); row.className='tag-item';
-      row.innerHTML=`<span class="tag-name">${name}</span><span class="tag-count">${count}개</span>`;
-      row.addEventListener('click', ()=>{
-        state.activeTag=name; updateTagFilterLabel(); close(); resetAndRenderList();
+      const row=document.createElement('label');
+      row.className='tag-item';
+      row.innerHTML = `
+        <div style="display:flex;align-items:center">
+          <input type="checkbox" ${selected.has(name)?'checked':''} />
+          <span class="tag-name">${name}</span>
+        </div>
+        <span class="tag-count">${count}개</span>
+      `;
+      const checkbox = row.querySelector('input');
+      checkbox.addEventListener('change', (e)=>{
+        if(e.target.checked) selected.add(name); else selected.delete(name);
       });
       listWrap.appendChild(row);
     });
   }
-  function close(){ modal.style.display='none'; }
-  search.value=''; renderList(''); modal.style.display='flex';
-  search.oninput=(e)=>renderList(e.target.value);
-  $('#tagAllBtn').onclick=()=>{ state.activeTag=null; updateTagFilterLabel(); close(); resetAndRenderList(); };
-  $('#tagNoneBtn').onclick=()=>{ state.activeTag=UNTAGGED; updateTagFilterLabel(); close(); resetAndRenderList(); };
-  $('#tagClearBtn').onclick=()=>{ state.activeTag=null; updateTagFilterLabel(); close(); resetAndRenderList(); };
-  $('#tagCloseBtn').onclick=close;
+
+  // 초기 세팅
+  matchSel.value = tempMatch;
+  onlyUntagged.checked = tempOnlyUntagged;
+  search.value=''; renderList('');
+
+  // 동작
+  matchSel.onchange = (e)=> tempMatch = e.target.value;
+  onlyUntagged.onchange = (e)=> tempOnlyUntagged = !!e.target.checked;
+  search.oninput = (e)=> renderList(e.target.value);
+
+  $('#tagSelectAll').onclick = ()=>{ selected = new Set(tags.map(t=>t[0])); renderList(search.value); };
+  $('#tagClearAll').onclick = ()=>{ selected = new Set(); renderList(search.value); };
+  $('#tagReset').onclick = ()=>{ selected = new Set(); tempMatch='OR'; tempOnlyUntagged=false; matchSel.value='OR'; onlyUntagged.checked=false; renderList(''); search.value=''; };
+
+  $('#tagApply').onclick = ()=>{
+    state.activeTags = Array.from(selected);
+    state.tagMatch = tempMatch;
+    state.onlyUntagged = tempOnlyUntagged;
+    updateTagFilterLabel();
+    close();
+    resetAndRenderList();
+  };
+  $('#tagCloseBtn').onclick = close;
   modal.addEventListener('click',(e)=>{ if(e.target && e.target.id==='tagModal') close(); });
+
+  function close(){ modal.style.display='none'; }
+  modal.style.display='flex';
 }
 function updateTagFilterLabel(){
   const el=$('#tagFilterLabel'); if(!el) return;
-  if(state.activeTag===UNTAGGED) el.textContent='태그 없음';
-  else if(!state.activeTag) el.textContent='전체';
-  else el.textContent=state.activeTag;
+  const tags=state.activeTags;
+  const mode=state.tagMatch;
+  if(state.onlyUntagged){
+    el.textContent='무태그만';
+    return;
+  }
+  if(!tags.length){
+    el.textContent='전체';
+  }else{
+    const short = tags.slice(0,3).join(' ');
+    el.textContent = `${short}${tags.length>3?' …':''} · ${mode}`;
+  }
 }
 
-/* ========== 자동 접힘 헤더(깜빡임 방지 완전 접힘) ========== */
-(function autoHideHeaderInit(){
-  const header=document.querySelector('header'); if(!header) return;
+/* ========== 자동 접힘 헤더 v2 (스크롤 중엔 버튼으로만 펼침) ========== */
+(function autoHideHeaderV2(){
+  const header = document.querySelector('header');
+  const toggleBtn = document.getElementById('headerQuickToggle');
+  if (!header || !toggleBtn) return;
+
   header.classList.add('auto-hide');
 
-  function updateHeaderMaxHeight(){
-    const prev=header.style.maxHeight;
-    header.style.maxHeight='none';
-    const h=header.scrollHeight;
-    header.style.maxHeight=prev;
-    header.style.setProperty('--header-max', h+'px');
+  function updateHeaderMaxHeight() {
+    const prev = header.style.maxHeight;
+    header.style.maxHeight = 'none';
+    const h = header.scrollHeight;
+    header.style.maxHeight = prev;
+    header.style.setProperty('--header-max', h + 'px');
   }
-  const ro=new ResizeObserver(updateHeaderMaxHeight);
+  const ro = new ResizeObserver(updateHeaderMaxHeight);
   ro.observe(header);
   window.addEventListener('resize', updateHeaderMaxHeight);
   requestAnimationFrame(updateHeaderMaxHeight);
   window.addEventListener('load', updateHeaderMaxHeight);
 
-  let lastY=window.scrollY, ticking=false;
-  const DOWN_DELTA=8, UP_DELTA=1, HIDE_START=120;
+  let lastY = window.scrollY;
+  let ticking = false;
 
-  function anyModalOpen(){
-    const m1=$('#modalWrap'), m2=$('#tagModal');
-    const vis=el=>el && getComputedStyle(el).display!=='none';
-    return vis(m1)||vis(m2);
+  const DOWN_DELTA = 8;
+  const HIDE_START = 1;
+
+  function showHeader() {
+    header.classList.remove('hide');
+    toggleBtn.setAttribute('aria-expanded', 'true');
+    updateHeaderMaxHeight();
   }
-  function showHeader(){ header.classList.remove('hide'); updateHeaderMaxHeight(); }
-  function hideHeader(){ header.classList.add('hide'); }
+  function hideHeader() {
+    header.classList.add('hide');
+    toggleBtn.setAttribute('aria-expanded', 'false');
+  }
 
-  function onScroll(){
-    if(ticking) return; ticking=true;
-    requestAnimationFrame(()=>{
-      const y=window.scrollY, dy=y-lastY;
-      if(anyModalOpen()){ showHeader(); }
-      else if(y<=0){ showHeader(); }
-      else if(dy<-UP_DELTA){ showHeader(); }                 // 위로 1px만 올려도 펼침
-      else if(dy>DOWN_DELTA && y>HIDE_START){ hideHeader(); } // 충분히 내리면 접기
-      lastY=y; ticking=false;
+  // 초기: 맨 위면 펼침, 아니면 접힘
+  if (window.scrollY <= 0) showHeader(); else hideHeader();
+
+  // 스크롤: 아래로 내리면 접힘 / 맨 위면 펼침. (올린다고 자동 펼침 안 함)
+  function onScroll() {
+    if (ticking) return;
+    ticking = true;
+    requestAnimationFrame(() => {
+      const y = window.scrollY;
+      const dy = y - lastY;
+
+      if (y <= 0) {
+        showHeader();
+      } else {
+        if (dy > DOWN_DELTA && y > HIDE_START) {
+          hideHeader();
+        }
+        // 위로 올려도 자동펼침 없음(버튼으로만 펼침)
+      }
+
+      lastY = y;
+      ticking = false;
     });
   }
-  window.addEventListener('scroll', onScroll, {passive:true});
+  window.addEventListener('scroll', onScroll, { passive: true });
+
+  // 버튼: 언제든 즉시 토글 (펼친 뒤 스크롤 내리면 다시 자동 접힘)
+  toggleBtn.addEventListener('click', () => {
+    const isHidden = header.classList.contains('hide');
+    if (isHidden) showHeader(); else hideHeader();
+  });
 })();
 
 /* ========== 초기화 & 이벤트 ========== */
@@ -502,7 +640,7 @@ document.addEventListener('DOMContentLoaded', ()=>{
 
   // 테마
   applyTheme();
-  $('#darkToggle').addEventListener('change', e=>{ state.theme=e.target.checked?'dark':'light'; localStorage.setItem('theme',state.theme); applyTheme(); });
+  $('#darkToggle').addEventListener('change', e=>{ state.theme=e.target.checked?'dark':'light'; localStorage.setItem(LS_THEME,state.theme); applyTheme(); });
 
   // 배치 크기
   $('#batchSize').value=String(state.batch);
@@ -610,9 +748,8 @@ document.addEventListener('DOMContentLoaded', ()=>{
   $('#cloudPush').addEventListener('click', cloudPush);
 
   // 초기 로드
-  renderTagChips();
   resetAndRenderList();
-  setupInfiniteObserver(); // 무한스크롤 대비
+  setupInfiniteObserver();
 });
 
 /* 목록 리셋 후 첫 배치(모드별) */

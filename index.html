@@ -676,6 +676,46 @@ document.addEventListener('DOMContentLoaded', ()=>{
   // 태그 모달
   $('#tagFilterBtn').addEventListener('click', openTagModal);
   updateTagFilterLabel();
+// === 동기화 설정 (GitHub Gist 모달) ===
+const modalWrap = $('#modalWrap');
+const tokenInput = $('#tokenInput');
+const gistInput  = $('#gistInput');
+const settingsStatus = $('#settingsStatus');
+
+function openSyncModal(){
+  tokenInput.value = state.token || '';
+  gistInput.value  = state.gistId || '';
+  settingsStatus.textContent = (state.token && state.gistId)
+    ? '현재 저장된 값이 불러와졌습니다.'
+    : '토큰과 Gist ID를 입력하세요.';
+  modalWrap.style.display='flex';
+}
+function closeSyncModal(){
+  modalWrap.style.display='none';
+}
+function saveSyncSettings(){
+  const token = (tokenInput?.value || '').trim();
+  const gist  = (gistInput?.value  || '').trim();
+  if(!token || !gist){
+    settingsStatus.textContent = '둘 다 입력해야 저장됩니다.';
+    return;
+  }
+  state.token = token;
+  state.gistId = gist;
+  localStorage.setItem(CFG_TOKEN, token);
+  localStorage.setItem(CFG_GIST, gist);
+  settingsStatus.textContent = '저장 완료. 이제 클라우드 동기화를 사용할 수 있어요.';
+  setTimeout(closeSyncModal, 500);
+}
+
+// 버튼/이벤트 연결
+$('#syncSettings')?.addEventListener('click', openSyncModal);
+$('#saveSettings')?.addEventListener('click', saveSyncSettings);
+$('#closeSettings')?.addEventListener('click', closeSyncModal);
+// 바깥 클릭으로 닫기
+modalWrap?.addEventListener('click', (e)=>{ if(e.target===modalWrap) closeSyncModal(); });
+// ESC 닫기
+document.addEventListener('keydown', (e)=>{ if(e.key==='Escape' && modalWrap?.style.display==='flex') closeSyncModal(); });
 
   // 가져오기
   $('#importBtn').addEventListener('click', ()=>{

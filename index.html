@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>트윗 보관함 — 페이지 보기 + 오버레이 헤더 + 다중태그</title>
+<title>트윗 보관함 — 페이지 보기 + 오버레이 헤더 + 다중태그 + 동기화</title>
 
 <!-- X(Twitter) 임베드 SDK -->
 <script async src="https://platform.twitter.com/widgets.js"></script>
@@ -14,7 +14,7 @@
   *{box-sizing:border-box}
   body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Apple SD Gothic Neo,Noto Sans KR,sans-serif;background:var(--bg);color:var(--fg)}
 
-  /* 헤더: 기본은 sticky 자동접힘, 'overlay'일 때는 화면 최상단에 고정 노출 */
+  /* 헤더: 기본 sticky 자동접힘, overlay 시 고정 노출 */
   header{
     position: sticky;
     top: 0;
@@ -32,7 +32,6 @@
     pointer-events: none;
     opacity: 0;
   }
-  /* 오버레이 모드 */
   header.overlay{
     position: fixed !important;
     top: 0; left: 0; right: 0;
@@ -211,11 +210,11 @@ https://x.com/someone/status/456... #정책 | 개인 메모"></textarea>
   onclick="window.__toggleTools && window.__toggleTools()"
 >도구</button>
 
-<!-- 동기화 모달 -->
+<!-- 동기화 설정 모달 (GitHub Gist) -->
 <div class="modal-backdrop" id="modalWrap" style="display:none">
   <div class="modal">
     <h2>동기화 설정</h2>
-    <div class="desc">GitHub 토큰(권한: gist read/write)과 비공개 Gist의 ID를 입력하세요. 이 값들은 이 브라우저에만 저장됩니다.</div>
+    <div class="desc">GitHub 토큰(권한: <b>gist</b> read/write)과 비공개 Gist의 <b>ID</b>를 입력하세요. 이 값들은 이 브라우저에만 저장됩니다.</div>
     <div class="row">
       <div><label class="sub">GitHub Personal Access Token</label><input id="tokenInput" placeholder="ghp_... 또는 fine-grained token" /></div>
       <div><label class="sub">Gist ID</label><input id="gistInput" placeholder="예: abcdef1234567890..." /></div>
@@ -228,7 +227,7 @@ https://x.com/someone/status/456... #정책 | 개인 메모"></textarea>
   </div>
 </div>
 
-<!-- 태그 선택 모달 -->
+<!-- 태그 선택 모달 (다중 선택 + AND/OR + 무태그만) -->
 <div class="modal-backdrop" id="tagModal" style="display:none">
   <div class="modal">
     <h2>태그 필터</h2>
@@ -265,7 +264,7 @@ https://x.com/someone/status/456... #정책 | 개인 메모"></textarea>
 /* ===== 유틸 & 상태 ===== */
 const $=(s,d=document)=>d.querySelector(s);
 const $$=(s,d=document)=>Array.from(d.querySelectorAll(s));
-const LS_KEY='tweet-shelf-v10';
+const LS_KEY='tweet-shelf-v11';
 const CFG_TOKEN='tweet-shelf-token';
 const CFG_GIST='tweet-shelf-gist';
 const LS_THEME='theme';
@@ -570,7 +569,7 @@ function updateTagFilterLabel(){
   else{ const short=tags.slice(0,3).join(' '); el.textContent=`${short}${tags.length>3?' …':''} · ${mode}`; }
 }
 
-/* ===== 헤더 자동접힘 + 오버레이 토글 ===== */
+/* ===== 헤더 자동접힘 + 확실한 오버레이 토글 ===== */
 (function headerOverlayToggle(){
   function init(){
     const header=$('header'), btn=$('#headerQuickToggle');
@@ -589,11 +588,14 @@ function updateTagFilterLabel(){
     function showHeader(){ header.classList.remove('hide'); btn.setAttribute('aria-expanded','true'); updateHeaderMax(); }
     function hideHeader(){ header.classList.add('hide'); btn.setAttribute('aria-expanded','false'); header.classList.remove('overlay'); }
 
+    // 전역 토글 (어디서든 '도구' 클릭 → 즉시 오버레이로 열기)
     window.__toggleTools = function(){
       const opening = header.classList.contains('hide');
       if(opening){
-        header.classList.add('overlay');
+        header.classList.add('overlay'); // 스크롤 어디든 바로 보이게
         showHeader();
+
+        // 가시성 폴백
         setTimeout(()=>{
           const rect = header.getBoundingClientRect();
           if(rect.height < 10 || rect.bottom <= 0){
@@ -602,12 +604,14 @@ function updateTagFilterLabel(){
           }
         }, 60);
       }else{
-        hideHeader();
+        hideHeader(); // 오버레이 해제 + 접기
       }
     };
 
+    // 초기 상태
     if(window.scrollY<=0) showHeader(); else hideHeader();
 
+    // 스크롤: 아래로 내리면 접힘 / 맨 위면 펼침 (오버레이 켜져 있으면 유지)
     let lastY=window.scrollY, ticking=false;
     const DOWN_DELTA=8, HIDE_START=1;
     function onScroll(){
@@ -615,7 +619,7 @@ function updateTagFilterLabel(){
       requestAnimationFrame(()=>{
         const y=window.scrollY, dy=y-lastY;
         if(header.classList.contains('overlay')){
-          // overlay 열린 동안 자동 닫힘 없음
+          // 오버레이 열려있으면 스크롤과 무관하게 유지
         }else{
           if(y<=0){ showHeader(); }
           else if(dy>DOWN_DELTA && y>HIDE_START){ hideHeader(); }
@@ -624,6 +628,8 @@ function updateTagFilterLabel(){
       });
     }
     window.addEventListener('scroll', onScroll, {passive:true});
+
+    // 버튼 이벤트(표준 경로)
     btn.addEventListener('click', (e)=>{ e.preventDefault(); e.stopPropagation(); window.__toggleTools(); }, {passive:false});
   }
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', init);
@@ -667,24 +673,24 @@ document.addEventListener('DOMContentLoaded', ()=>{
   $('#tagFilterBtn').addEventListener('click', openTagModal);
   updateTagFilterLabel();
 
-  // ▶▶ 동기화 설정 모달 열기/저장/닫기 (추가됨)
+  // ▶ 동기화 설정(모달)
   const modalWrap = $('#modalWrap');
   const tokenInput = $('#tokenInput');
-  const gistInput = $('#gistInput');
+  const gistInput  = $('#gistInput');
   const settingsStatus = $('#settingsStatus');
 
   function openSyncModal(){
     tokenInput.value = state.token || '';
     gistInput.value  = state.gistId || '';
-    settingsStatus.textContent = state.token && state.gistId ? '현재 값이 로드되었습니다.' : '토큰과 Gist ID를 입력하세요.';
+    settingsStatus.textContent = (state.token && state.gistId)
+      ? '현재 저장된 값이 불러와졌습니다.'
+      : '토큰과 Gist ID를 입력하세요.';
     modalWrap.style.display='flex';
   }
-  function closeSyncModal(){
-    modalWrap.style.display='none';
-  }
+  function closeSyncModal(){ modalWrap.style.display='none'; }
   function saveSyncSettings(){
-    const token = tokenInput.value.trim();
-    const gist  = gistInput.value.trim();
+    const token = (tokenInput?.value || '').trim();
+    const gist  = (gistInput?.value  || '').trim();
     if(!token || !gist){
       settingsStatus.textContent = '둘 다 입력해야 저장됩니다.';
       return;
@@ -693,10 +699,9 @@ document.addEventListener('DOMContentLoaded', ()=>{
     state.gistId = gist;
     localStorage.setItem(CFG_TOKEN, token);
     localStorage.setItem(CFG_GIST, gist);
-    settingsStatus.textContent = '저장됨. 이제 동기화 버튼을 사용할 수 있어요.';
+    settingsStatus.textContent = '저장 완료. 이제 동기화 버튼을 사용할 수 있어요.';
     setTimeout(closeSyncModal, 500);
   }
-
   $('#syncSettings').addEventListener('click', openSyncModal);
   $('#saveSettings').addEventListener('click', saveSyncSettings);
   $('#closeSettings').addEventListener('click', closeSyncModal);
@@ -759,12 +764,9 @@ document.addEventListener('DOMContentLoaded', ()=>{
 
   // 동기화(Gist)
   async function cloudPull(){
-    if(!state.token || !state.gistId){ alert('동기화 설정이 비어있습니다. 우측 상단의 [동기화 설정]에서 저장하세요.'); return; }
+    if(!state.token || !state.gistId){ alert('동기화 설정이 비어있습니다. [동기화 설정]에서 저장하세요.'); return; }
     const res=await fetch(`https://api.github.com/gists/${state.gistId}`,{
-      headers:{
-        'Authorization':`Bearer ${state.token}`,
-        'Accept':'application/vnd.github+json'
-      }
+      headers:{ 'Authorization':`Bearer ${state.token}`, 'Accept':'application/vnd.github+json' }
     });
     if(!res.ok){ alert('불러오기 실패: Gist ID/토큰/권한 확인'); return; }
     const data=await res.json();
@@ -785,7 +787,7 @@ document.addEventListener('DOMContentLoaded', ()=>{
     }catch{ alert('Gist JSON 파싱 실패'); }
   }
   async function cloudPush(){
-    if(!state.token || !state.gistId){ alert('동기화 설정이 비어있습니다. 우측 상단의 [동기화 설정]에서 저장하세요.'); return; }
+    if(!state.token || !state.gistId){ alert('동기화 설정이 비어있습니다. [동기화 설정]에서 저장하세요.'); return; }
     const body={files:{'tweet-shelf.json':{content:JSON.stringify(state.items,null,2)}}};
     const res=await fetch(`https://api.github.com/gists/${state.gistId}`,{
       method:'PATCH',

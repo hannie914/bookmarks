@@ -610,7 +610,7 @@ function updateTagFilterLabel(){
       header.classList.remove('overlay');
       btn.setAttribute('aria-expanded','false');
       // 페이지가 최상단이면 보이게, 아니면 숨김 유지
-      if (window.scrollY <= 0) showHeader(); else hideHeader();
+      if (window.scrollY <= 2) showHeader(); else hideHeader();
     }
 
     // 전역 토글

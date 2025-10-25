@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>트윗 보관함 — 페이지 보기 + 오버레이 헤더 + 다중태그 + 동기화</title>
+<title>트윗 보관함 — 페이지 보기 + 자동접힘 헤더(오버레이 열기) + 다중태그</title>
 
 <!-- X(Twitter) 임베드 SDK -->
 <script async src="https://platform.twitter.com/widgets.js"></script>
@@ -14,7 +14,7 @@
   *{box-sizing:border-box}
   body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Apple SD Gothic Neo,Noto Sans KR,sans-serif;background:var(--bg);color:var(--fg)}
 
-  /* 헤더: 기본 sticky 자동접힘, overlay 시 고정 노출 */
+  /* 헤더: 기본은 sticky 접힘, 필요 시 overlay로 고정 노출 */
   header{
     position: sticky;
     top: 0;
@@ -32,6 +32,7 @@
     pointer-events: none;
     opacity: 0;
   }
+  /* 오버레이 모드: 스크롤 하단에서도 화면 위에 고정 노출 */
   header.overlay{
     position: fixed !important;
     top: 0; left: 0; right: 0;
@@ -82,7 +83,7 @@
   .tag-count{font-size:12px;color:var(--muted)}
   .tag-item input{margin-right:8px}
 
-  /* 우하단 '도구' 버튼 */
+  /* 퀵토글 버튼 */
   .quick-toggle{
     position: fixed;
     right: 12px;
@@ -154,8 +155,15 @@ https://x.com/someone/status/456... #정책 | 개인 메모"></textarea>
           <label class="switch"><input type="checkbox" id="darkToggle" /> 다크모드</label>
           <span class="count sub" id="count"></span>
         </div>
+        <div class="controls" style="margin-top:6px">
+          <button id="cloudPull">클라우드에서 불러오기</button>
+          <button id="cloudPush">클라우드로 업로드</button>
+          <button id="exportBtn">백업 내보내기(JSON)</button>
+          <button id="importJsonBtn">백업 불러오기</button>
+          <input type="file" id="fileInput" accept="application/json" style="display:none" />
+        </div>
 
-        <!-- 페이지 모드 전용 -->
+        <!-- 페이지 모드일 때만 보이는 페이지네이션 -->
         <div class="controls pager" id="pagerBar" style="margin-top:6px">
           <div class="sub">페이지 크기</div>
           <select id="pageSize">
@@ -168,7 +176,7 @@ https://x.com/someone/status/456... #정책 | 개인 메모"></textarea>
           <button id="lastPage">마지막 »</button>
         </div>
 
-        <!-- 더 보기 전용 -->
+        <!-- 더 보기 전용 컨트롤 -->
         <div class="controls" id="loadMoreBar" style="margin-top:6px;display:none">
           <div class="sub">배치 크기</div>
           <select id="batchSize">
@@ -201,20 +209,20 @@ https://x.com/someone/status/456... #정책 | 개인 메모"></textarea>
   </div>
 </main>
 
-<!-- 우하단 고정: '도구' (전역 폴백 포함) -->
+<!-- 우하단 고정: 도구 열기 (오버레이 토글 / 폴백 포함) -->
 <button
   id="headerQuickToggle"
   class="quick-toggle"
   aria-expanded="false"
-  title="도구"
-  onclick="window.__toggleTools && window.__toggleTools()"
->도구</button>
+  title="도구 열기"
+  onclick="window.__toggleHeader && window.__toggleHeader()"
+>도구 열기</button>
 
-<!-- 동기화 설정 모달 (GitHub Gist) -->
+<!-- 동기화 모달 -->
 <div class="modal-backdrop" id="modalWrap" style="display:none">
   <div class="modal">
     <h2>동기화 설정</h2>
-    <div class="desc">GitHub 토큰(권한: <b>gist</b> read/write)과 비공개 Gist의 <b>ID</b>를 입력하세요. 이 값들은 이 브라우저에만 저장됩니다.</div>
+    <div class="desc">GitHub 토큰(권한: gist read/write)과 비공개 Gist의 ID를 입력하세요. 이 값들은 이 브라우저에만 저장됩니다.</div>
     <div class="row">
       <div><label class="sub">GitHub Personal Access Token</label><input id="tokenInput" placeholder="ghp_... 또는 fine-grained token" /></div>
       <div><label class="sub">Gist ID</label><input id="gistInput" placeholder="예: abcdef1234567890..." /></div>
@@ -264,7 +272,7 @@ https://x.com/someone/status/456... #정책 | 개인 메모"></textarea>
 /* ===== 유틸 & 상태 ===== */
 const $=(s,d=document)=>d.querySelector(s);
 const $$=(s,d=document)=>Array.from(d.querySelectorAll(s));
-const LS_KEY='tweet-shelf-v11';
+const LS_KEY='tweet-shelf-v9';
 const CFG_TOKEN='tweet-shelf-token';
 const CFG_GIST='tweet-shelf-gist';
 const LS_THEME='theme';
@@ -290,12 +298,12 @@ const state={
   activeTags: [],
   tagMatch: 'OR',
   onlyUntagged: false,
-  /* 뷰 모드 */
+  // 뷰 모드
   mode: 'paginate',      // 'paginate' | 'loadMore' | 'infinite'
   page: 1,
   pageSize: 12,
-  batch: 12,
-  offset: 0,
+  batch: 12,             // loadMore 모드에서 사용
+  offset: 0,             // loadMore/infinite 에서 누적표시
   ioLoad: null,
   MAX_MOUNTED: 30,
   sortBy: localStorage.getItem(LS_SORT) || 'addedDesc'
@@ -319,11 +327,16 @@ function currentFiltered(){
   return state.items.filter(it=>{
     const itemTags = (it.tags||[]).map(t=>t.toLowerCase());
     const hay = [it.url, itemTags.join(' '), it.note||''].join(' ').toLowerCase();
+
     if (q && !hay.includes(q)) return false;
     if (onlyUntagged) return itemTags.length===0;
+
     if (tagsSel.length>0){
-      if (mode==='AND'){ if (!tagsSel.every(t=>itemTags.includes(t))) return false; }
-      else { if (!tagsSel.some(t=>itemTags.includes(t))) return false; }
+      if (mode==='AND'){
+        if (!tagsSel.every(t=>itemTags.includes(t))) return false;
+      } else {
+        if (!tagsSel.some(t=>itemTags.includes(t))) return false;
+      }
     }
     return true;
   });
@@ -371,8 +384,7 @@ function bindCardEvents(slice){
     const noteInput=card.querySelector('.note');
     const doSave=debounce(()=>{
       const idx=state.items.findIndex(x=>x.url===item.url); if(idx===-1) return;
-      const tags=tagsInput.value.trim().split(/\s+/).filter(Boolean)
-        .map(s=>s.startsWith('#')?s.toLowerCase():'#'+s.toLowerCase());
+      const tags=tagsInput.value.trim().split(/\s+/).filter(Boolean).map(s=>s.startsWith('#')?s.toLowerCase():'#'+s.toLowerCase());
       const note=noteInput.value.trim();
       state.items[idx].tags=tags; state.items[idx].note=note; saveLocal(state.items);
       card.dataset.tags=tags.join(' '); card.dataset.note=note;
@@ -415,7 +427,7 @@ async function embedQueue(cards, concurrency){
   });
 }
 
-/* ===== 카운터 ===== */
+/* ===== 공통 렌더 헬퍼 ===== */
 function updateCounters(){
   const total = sortItems(currentFiltered()).length;
   const shown = $('#grid').children.length;
@@ -432,7 +444,7 @@ function pageStats(){
   return { filtered, total, totalPages, page };
 }
 function renderPage(){
-  const { filtered, totalPages, page } = pageStats();
+  const { filtered, total, totalPages, page } = pageStats();
   state.page = page;
   $('#grid').innerHTML='';
   const start=(page-1)*state.pageSize;
@@ -452,7 +464,7 @@ function renderPage(){
 }
 function renderAfterDelete(){
   if(state.mode!=='paginate') return;
-  const { totalPages, page } = pageStats();
+  const { total, totalPages, page } = pageStats();
   if(page>totalPages) state.page = totalPages;
   renderPage();
 }
@@ -569,8 +581,8 @@ function updateTagFilterLabel(){
   else{ const short=tags.slice(0,3).join(' '); el.textContent=`${short}${tags.length>3?' …':''} · ${mode}`; }
 }
 
-/* ===== 헤더 자동접힘 + 확실한 오버레이 토글 ===== */
-(function headerOverlayToggle(){
+/* ===== 헤더 자동접힘 + 오버레이 토글 ===== */
+(function headerToggle(){
   function init(){
     const header=$('header'), btn=$('#headerQuickToggle');
     if(!header||!btn) return;
@@ -588,30 +600,22 @@ function updateTagFilterLabel(){
     function showHeader(){ header.classList.remove('hide'); btn.setAttribute('aria-expanded','true'); updateHeaderMax(); }
     function hideHeader(){ header.classList.add('hide'); btn.setAttribute('aria-expanded','false'); header.classList.remove('overlay'); }
 
-    // 전역 토글 (어디서든 '도구' 클릭 → 즉시 오버레이로 열기)
-    window.__toggleTools = function(){
-      const opening = header.classList.contains('hide');
-      if(opening){
-        header.classList.add('overlay'); // 스크롤 어디든 바로 보이게
+    // 전역 토글 (오버레이)
+    window.__toggleHeader = function(){
+      const hidden=header.classList.contains('hide');
+      if(hidden){
+        // 스크롤 아래면 오버레이로 열기, 맨 위면 일반 펼침
+        if(window.scrollY>0) header.classList.add('overlay');
         showHeader();
-
-        // 가시성 폴백
-        setTimeout(()=>{
-          const rect = header.getBoundingClientRect();
-          if(rect.height < 10 || rect.bottom <= 0){
-            window.scrollTo({top:0, behavior:'smooth'});
-            setTimeout(()=>{ header.classList.add('overlay'); showHeader(); }, 350);
-          }
-        }, 60);
       }else{
-        hideHeader(); // 오버레이 해제 + 접기
+        hideHeader();
       }
     };
 
     // 초기 상태
     if(window.scrollY<=0) showHeader(); else hideHeader();
 
-    // 스크롤: 아래로 내리면 접힘 / 맨 위면 펼침 (오버레이 켜져 있으면 유지)
+    // 스크롤: 아래로 내리면 접힘 / 맨 위면 펼침 (단, overlay가 켜져 있으면 유지)
     let lastY=window.scrollY, ticking=false;
     const DOWN_DELTA=8, HIDE_START=1;
     function onScroll(){
@@ -619,7 +623,7 @@ function updateTagFilterLabel(){
       requestAnimationFrame(()=>{
         const y=window.scrollY, dy=y-lastY;
         if(header.classList.contains('overlay')){
-          // 오버레이 열려있으면 스크롤과 무관하게 유지
+          // 오버레이 모드에서는 자동으로 닫지 않음 (버튼으로 닫기)
         }else{
           if(y<=0){ showHeader(); }
           else if(dy>DOWN_DELTA && y>HIDE_START){ hideHeader(); }
@@ -629,8 +633,8 @@ function updateTagFilterLabel(){
     }
     window.addEventListener('scroll', onScroll, {passive:true});
 
-    // 버튼 이벤트(표준 경로)
-    btn.addEventListener('click', (e)=>{ e.preventDefault(); e.stopPropagation(); window.__toggleTools(); }, {passive:false});
+    // 버튼 이벤트
+    btn.addEventListener('click', (e)=>{ e.preventDefault(); e.stopPropagation(); window.__toggleHeader(); }, {passive:false});
   }
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', init);
   else init();
@@ -642,7 +646,7 @@ document.addEventListener('DOMContentLoaded', ()=>{
 
   // 테마
   applyTheme();
-  $('#darkToggle').addEventListener('change', e=>{ state.theme=e.target.checked?'dark':'light'; localStorage.setItem(LS_THEME,state.theme); applyTheme(); });
+  $('#darkToggle').addEventListener('change', e=>{ state.theme=e.target.checked?'dark':'light'; localStorage.setItem('theme',state.theme); applyTheme(); });
 
   // 모드 전환
   const toPaginate=()=>{ state.mode='paginate'; $('#pagerBar').style.display='flex'; $('#loadMoreBar').style.display='none'; refreshView(); };
@@ -652,7 +656,7 @@ document.addEventListener('DOMContentLoaded', ()=>{
   $('#modeLoadMore').addEventListener('change', toLoadMore);
   $('#modeInfinite').addEventListener('change', toInfinite);
 
-  // 페이지/배치 크기
+  // 페이지 크기 / 배치 크기
   $('#pageSize').value=String(state.pageSize);
   $('#pageSize').addEventListener('change', e=>{ state.pageSize=+e.target.value; state.page=1; refreshView(); });
   $('#batchSize').value=String(state.batch);
@@ -667,52 +671,16 @@ document.addEventListener('DOMContentLoaded', ()=>{
   // 검색 / 정렬
   $('#q').addEventListener('input', ()=>{ state.page=1; refreshView(); });
   $('#sortBy').value = state.sortBy;
-  $('#sortBy').addEventListener('change', (e)=>{ state.sortBy=e.target.value; localStorage.setItem(LS_SORT,state.sortBy); state.page=1; refreshView(); });
+  $('#sortBy').addEventListener('change', (e)=>{ state.sortBy=e.target.value; localStorage.setItem('tweet-shelf-sort',state.sortBy); state.page=1; refreshView(); });
 
   // 태그 모달
   $('#tagFilterBtn').addEventListener('click', openTagModal);
   updateTagFilterLabel();
 
-  // ▶ 동기화 설정(모달)
-  const modalWrap = $('#modalWrap');
-  const tokenInput = $('#tokenInput');
-  const gistInput  = $('#gistInput');
-  const settingsStatus = $('#settingsStatus');
-
-  function openSyncModal(){
-    tokenInput.value = state.token || '';
-    gistInput.value  = state.gistId || '';
-    settingsStatus.textContent = (state.token && state.gistId)
-      ? '현재 저장된 값이 불러와졌습니다.'
-      : '토큰과 Gist ID를 입력하세요.';
-    modalWrap.style.display='flex';
-  }
-  function closeSyncModal(){ modalWrap.style.display='none'; }
-  function saveSyncSettings(){
-    const token = (tokenInput?.value || '').trim();
-    const gist  = (gistInput?.value  || '').trim();
-    if(!token || !gist){
-      settingsStatus.textContent = '둘 다 입력해야 저장됩니다.';
-      return;
-    }
-    state.token = token;
-    state.gistId = gist;
-    localStorage.setItem(CFG_TOKEN, token);
-    localStorage.setItem(CFG_GIST, gist);
-    settingsStatus.textContent = '저장 완료. 이제 동기화 버튼을 사용할 수 있어요.';
-    setTimeout(closeSyncModal, 500);
-  }
-  $('#syncSettings').addEventListener('click', openSyncModal);
-  $('#saveSettings').addEventListener('click', saveSyncSettings);
-  $('#closeSettings').addEventListener('click', closeSyncModal);
-  modalWrap.addEventListener('click', (e)=>{ if(e.target===modalWrap) closeSyncModal(); });
-  document.addEventListener('keydown', (e)=>{ if(e.key==='Escape' && modalWrap.style.display==='flex'){ closeSyncModal(); }});
-
   // 가져오기
   $('#importBtn').addEventListener('click', ()=>{
     const lines=$('#bulk').value.split('\n').map(s=>s.trim()).filter(Boolean);
-    const common=($('#commonTags').value||'').trim().split(/\s+/).filter(Boolean)
-      .map(t=>t.startsWith('#')?t.toLowerCase():'#'+t.toLowerCase());
+    const common=($('#commonTags').value||'').trim().split(/\s+/).filter(Boolean).map(t=>t.startsWith('#')?t.toLowerCase():'#'+t.toLowerCase());
     const newOnes=[];
     for(const line of lines){
       const p=parseLine(line); if(!p) continue;
@@ -764,11 +732,9 @@ document.addEventListener('DOMContentLoaded', ()=>{
 
   // 동기화(Gist)
   async function cloudPull(){
-    if(!state.token || !state.gistId){ alert('동기화 설정이 비어있습니다. [동기화 설정]에서 저장하세요.'); return; }
-    const res=await fetch(`https://api.github.com/gists/${state.gistId}`,{
-      headers:{ 'Authorization':`Bearer ${state.token}`, 'Accept':'application/vnd.github+json' }
-    });
-    if(!res.ok){ alert('불러오기 실패: Gist ID/토큰/권한 확인'); return; }
+    if(!state.token || !state.gistId){ alert('동기화 설정이 비어있습니다.'); return; }
+    const res=await fetch(`https://api.github.com/gists/${state.gistId}`,{headers:{'Authorization':`Bearer ${state.token}`,'Accept':'application/vnd.github+json'}});
+    if(!res.ok){ alert('불러오기 실패: Gist ID/토큰 확인'); return; }
     const data=await res.json();
     const file=Object.values(data.files||{}).find(f=>/tweet-shelf\.json$/i.test(f.filename));
     if(!file){ alert('Gist에 tweet-shelf.json 파일이 없습니다.'); return; }
@@ -787,17 +753,9 @@ document.addEventListener('DOMContentLoaded', ()=>{
     }catch{ alert('Gist JSON 파싱 실패'); }
   }
   async function cloudPush(){
-    if(!state.token || !state.gistId){ alert('동기화 설정이 비어있습니다. [동기화 설정]에서 저장하세요.'); return; }
+    if(!state.token || !state.gistId){ alert('동기화 설정이 비어있습니다.'); return; }
     const body={files:{'tweet-shelf.json':{content:JSON.stringify(state.items,null,2)}}};
-    const res=await fetch(`https://api.github.com/gists/${state.gistId}`,{
-      method:'PATCH',
-      headers:{
-        'Authorization':`Bearer ${state.token}`,
-        'Accept':'application/vnd.github+json',
-        'Content-Type':'application/json'
-      },
-      body:JSON.stringify(body)
-    });
+    const res=await fetch(`https://api.github.com/gists/${state.gistId}`,{method:'PATCH',headers:{'Authorization':`Bearer ${state.token}`,'Accept':'application/vnd.github+json','Content-Type':'application/json'},body:JSON.stringify(body)});
     if(!res.ok){ alert('업로드 실패: Gist ID/토큰/권한 확인'); return; }
     alert('클라우드로 업로드했습니다.');
   }

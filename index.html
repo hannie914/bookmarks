@@ -14,7 +14,7 @@
   *{box-sizing:border-box}
   body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Apple SD Gothic Neo,Noto Sans KR,sans-serif;background:var(--bg);color:var(--fg)}
 
-  /* 헤더: 기본은 sticky 접힘, 필요 시 overlay로 고정 노출 */
+  /* 헤더: sticky + 접힘, 필요 시 overlay로 고정 */
   header{
     position: sticky;
     top: 0;
@@ -32,7 +32,6 @@
     pointer-events: none;
     opacity: 0;
   }
-  /* 오버레이 모드: 스크롤 하단에서도 화면 위에 고정 노출 */
   header.overlay{
     position: fixed !important;
     top: 0; left: 0; right: 0;
@@ -80,13 +79,7 @@
   .tag-item:hover{background:rgba(0,0,0,.04)}
   [data-theme="dark"] .tag-item:hover{background:rgba(255,255,255,.06)}
   .tag-item > div{display:flex;align-items:center;gap:8px;min-width:0}
-  .tag-name{
-    display:block;
-    white-space:nowrap;
-    overflow:hidden;
-    text-overflow:ellipsis;
-    max-width:100%;
-  }
+  .tag-name{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
   .tag-count{font-size:12px;color:var(--muted)}
   .tag-item input{margin-right:4px}
 
@@ -218,7 +211,7 @@ https://x.com/someone/status/456... #정책 | 개인 메모"></textarea>
   </div>
 </main>
 
-<!-- 우하단 고정: '도구' (전역 폴백 포함) -->
+<!-- 우하단 고정: '도구' -->
 <button
   id="headerQuickToggle"
   class="quick-toggle"
@@ -311,8 +304,8 @@ const state={
   mode: 'paginate',      // 'paginate' | 'loadMore' | 'infinite'
   page: 1,
   pageSize: 12,
-  batch: 12,             // loadMore 모드에서 사용
-  offset: 0,             // loadMore/infinite 에서 누적표시
+  batch: 12,
+  offset: 0,
   ioLoad: null,
   MAX_MOUNTED: 30,
   sortBy: localStorage.getItem(LS_SORT) || 'addedDesc'
@@ -336,16 +329,11 @@ function currentFiltered(){
   return state.items.filter(it=>{
     const itemTags = (it.tags||[]).map(t=>t.toLowerCase());
     const hay = [it.url, itemTags.join(' '), it.note||''].join(' ').toLowerCase();
-
     if (q && !hay.includes(q)) return false;
     if (onlyUntagged) return itemTags.length===0;
-
     if (tagsSel.length>0){
-      if (mode==='AND'){
-        if (!tagsSel.every(t=>itemTags.includes(t))) return false;
-      } else {
-        if (!tagsSel.some(t=>itemTags.includes(t))) return false;
-      }
+      if (mode==='AND'){ if (!tagsSel.every(t=>itemTags.includes(t))) return false; }
+      else { if (!tagsSel.some(t=>itemTags.includes(t))) return false; }
     }
     return true;
   });
@@ -590,7 +578,7 @@ function updateTagFilterLabel(){
   else{ const short=tags.slice(0,3).join(' '); el.textContent=`${short}${tags.length>3?' …':''} · ${mode}`; }
 }
 
-/* ===== 헤더 자동접힘 + 오버레이 토글(강화판) ===== */
+/* ===== 헤더 자동접힘 + 오버레이 토글(개선) ===== */
 (function headerToggle(){
   function init(){
     const header=$('header'), btn=$('#headerQuickToggle');
@@ -606,36 +594,26 @@ function updateTagFilterLabel(){
     ro.observe(header); window.addEventListener('resize', updateHeaderMax);
     requestAnimationFrame(updateHeaderMax); window.addEventListener('load', updateHeaderMax);
 
-    function showHeader(){
-      header.classList.remove('hide'); btn.setAttribute('aria-expanded','true'); updateHeaderMax();
-    }
-    function hideHeader(){
-      header.classList.add('hide'); btn.setAttribute('aria-expanded','false'); header.classList.remove('overlay');
-    }
+    function showHeader(){ header.classList.remove('hide'); btn.setAttribute('aria-expanded','true'); updateHeaderMax(); }
+    function hideHeader(){ header.classList.add('hide'); btn.setAttribute('aria-expanded','false'); header.classList.remove('overlay'); }
 
-    // 항상 어디서든 열리도록: 오버레이 강제 + 가시성 폴백
     function openOverlay(){
-      header.classList.add('overlay');
+      header.classList.add('overlay'); // 화면 어디서든 위에 띄우기
       showHeader();
-      // 다음 프레임에서 가시성 확인 → 필요 시 폴백 스크롤
-      setTimeout(()=>{
-        const rect = header.getBoundingClientRect();
-        if(rect.height < 10 || rect.bottom <= 0 || rect.top < -5){
-          // 드물게 레이아웃 지연 시 맨 위로 스크롤 폴백
-          window.scrollTo({ top: 0, behavior: 'smooth' });
-          setTimeout(()=>{ header.classList.add('overlay'); showHeader(); }, 280);
-        }
-      }, 60);
+      // 스크롤 이동 없음! (이전 폴백 제거)
     }
 
     // 전역 토글
     window.__toggleHeader = function(){
-      // 열려 있으면 닫기
-      if(!header.classList.contains('hide')){ hideHeader(); return; }
-      // 접혀 있으면 오버레이로 열기
-      openOverlay();
+      if(header.classList.contains('overlay') || !header.classList.contains('hide')){
+        // 오버레이 상태거나 펼쳐진 상태 → 닫기
+        hideHeader();
+      }else{
+        // 접힘 상태 → 오버레이로 열기
+        openOverlay();
+      }
     };
-    // 구버전 호환
+    // 과거 호환
     window.__toggleTools = window.__toggleHeader;
 
     // 초기 상태
@@ -649,7 +627,7 @@ function updateTagFilterLabel(){
       requestAnimationFrame(()=>{
         const y=window.scrollY, dy=y-lastY;
         if(header.classList.contains('overlay')){
-          // 오버레이 열려있으면 자동 접힘 방지
+          // 오버레이 열려있으면 스크롤로는 건드리지 않음
         }else{
           if(y<=0){ showHeader(); }
           else if(dy>DOWN_DELTA && y>HIDE_START){ hideHeader(); }
@@ -659,8 +637,11 @@ function updateTagFilterLabel(){
     }
     window.addEventListener('scroll', onScroll, {passive:true});
 
-    // 버튼 이벤트(인라인 onclick도 있지만 안전하게 한 번 더 바인딩)
+    // 버튼 이벤트
     btn.addEventListener('click', (e)=>{ e.preventDefault(); e.stopPropagation(); window.__toggleHeader(); }, {passive:false});
+
+    // ESC로 닫기
+    document.addEventListener('keydown', (e)=>{ if(e.key==='Escape') hideHeader(); });
   }
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', init);
   else init();
@@ -682,7 +663,7 @@ document.addEventListener('DOMContentLoaded', ()=>{
   $('#modeLoadMore').addEventListener('change', toLoadMore);
   $('#modeInfinite').addEventListener('change', toInfinite);
 
-  // 페이지 크기 / 배치 크기
+  // 페이지/배치
   $('#pageSize').value=String(state.pageSize);
   $('#pageSize').addEventListener('change', e=>{ state.pageSize=+e.target.value; state.page=1; refreshView(); });
   $('#batchSize').value=String(state.batch);
@@ -699,45 +680,33 @@ document.addEventListener('DOMContentLoaded', ()=>{
   $('#sortBy').value = state.sortBy;
   $('#sortBy').addEventListener('change', (e)=>{ state.sortBy=e.target.value; localStorage.setItem(LS_SORT,state.sortBy); state.page=1; refreshView(); });
 
-  // 태그 모달 버튼
+  // 태그 모달 & 빠른 필터
   $('#tagFilterBtn').addEventListener('click', openTagModal);
   updateTagFilterLabel();
+  $('#viewAllBtn').addEventListener('click', ()=>{ state.activeTags=[]; state.onlyUntagged=false; updateTagFilterLabel(); state.page=1; refreshView(); });
+  $('#untaggedBtn').addEventListener('click', ()=>{ state.activeTags=[]; state.onlyUntagged=true; updateTagFilterLabel(); state.page=1; refreshView(); });
 
-  // 메인 빠른 필터 버튼
-  $('#viewAllBtn').addEventListener('click', ()=>{
-    state.activeTags=[]; state.onlyUntagged=false; updateTagFilterLabel(); state.page=1; refreshView();
-  });
-  $('#untaggedBtn').addEventListener('click', ()=>{
-    state.activeTags=[]; state.onlyUntagged=true; updateTagFilterLabel(); state.page=1; refreshView();
-  });
-
-  // === 동기화 설정 (모달) ===
+  // 동기화 모달
   const modalWrap = $('#modalWrap');
   const tokenInput = $('#tokenInput');
   const gistInput  = $('#gistInput');
   const settingsStatus = $('#settingsStatus');
-
   function openSyncModal(){
     tokenInput.value = state.token || '';
     gistInput.value  = state.gistId || '';
     settingsStatus.textContent = (state.token && state.gistId)
-      ? '현재 저장된 값이 불러와졌습니다.'
-      : '토큰과 Gist ID를 입력하세요.';
+      ? '현재 저장된 값이 불러와졌습니다.' : '토큰과 Gist ID를 입력하세요.';
     modalWrap.style.display='flex';
   }
   function closeSyncModal(){ modalWrap.style.display='none'; }
   function saveSyncSettings(){
-    const token = (tokenInput?.value || '').trim();
-    const gist  = (gistInput?.value  || '').trim();
-    if(!token || !gist){
-      settingsStatus.textContent = '둘 다 입력해야 저장됩니다.';
-      return;
-    }
-    state.token = token;
-    state.gistId = gist;
+    const token=(tokenInput?.value||'').trim();
+    const gist=(gistInput?.value||'').trim();
+    if(!token || !gist){ settingsStatus.textContent='둘 다 입력해야 저장됩니다.'; return; }
+    state.token=token; state.gistId=gist;
     localStorage.setItem(CFG_TOKEN, token);
     localStorage.setItem(CFG_GIST, gist);
-    settingsStatus.textContent = '저장 완료. 이제 동기화 버튼을 사용할 수 있어요.';
+    settingsStatus.textContent='저장 완료. 이제 동기화 버튼을 사용할 수 있어요.';
     setTimeout(closeSyncModal, 500);
   }
   $('#syncSettings').addEventListener('click', openSyncModal);

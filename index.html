@@ -4,13 +4,36 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>트윗 보관함 — 배치 로드 & 무한스크롤(윈도우링) + 자동접힘 헤더 + 태그모달 + 정렬</title>
+
+<!-- X(Twitter) 임베드 SDK -->
 <script async src="https://platform.twitter.com/widgets.js"></script>
+
 <style>
-  :root { --bg:#fff; --fg:#1b1f23; --muted:#6a737d; --card:#fff; --border:#eaecef; --chip:#f1f8ff; --chip-fg:#0366d6; --accent:#0366d6; }
-  [data-theme="dark"] { --bg:#0d1117; --fg:#c9d1d9; --muted:#8b949e; --card:#161b22; --border:#30363d; --chip:#13233a; --chip-fg:#58a6ff; --accent:#58a6ff; }
+  :root { --bg:#fff; --fg:#1b1f23; --muted:#6a737d; --card:#fff; --border:#eaecef; --accent:#0366d6; }
+  [data-theme="dark"] { --bg:#0d1117; --fg:#c9d1d9; --muted:#8b949e; --card:#161b22; --border:#30363d; --accent:#58a6ff; }
   *{box-sizing:border-box}
   body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Apple SD Gothic Neo,Noto Sans KR,sans-serif;background:var(--bg);color:var(--fg)}
-  header{position:sticky;top:0;z-index:20;background:color-mix(in oklab,var(--bg) 92%,transparent);border-bottom:1px solid var(--border);transition:background-color 180ms ease, box-shadow 180ms ease;}
+
+  /* === 깜빡임 없는 자동접힘 헤더 === */
+  header{
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    background: var(--bg);              /* 반투명 제거 */
+    border-bottom: 1px solid var(--border);
+    transition: max-height 180ms ease;  /* 높이만 애니메이션 */
+    will-change: max-height;
+    overflow: hidden;                   /* 접힐 때 내부를 깔끔히 숨김 */
+  }
+  header.auto-hide{ max-height: var(--header-max, 600px); }
+  header.auto-hide.hide{
+    max-height: 0;
+    border-bottom-color: transparent;
+    pointer-events: none;
+    opacity: 0;                         /* 잔상/깜빡임 방지 */
+  }
+  @media (prefers-reduced-motion: reduce){ header{ transition:none } }
+
   .wrap{max-width:1120px;margin:0 auto;padding:16px}
   .row{display:grid;grid-template-columns:2fr 1fr;gap:16px}
   @media (max-width:860px){.row{grid-template-columns:1fr}}
@@ -22,9 +45,9 @@
   .controls{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
   .switch{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}
   .count{margin-left:auto}
-  .chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
-  /* 태그 칩 바는 숨김(이제 모달 사용) */
+  /* 예전 칩 바는 숨김(이제 모달 사용) */
   #tagChips { display:none !important; }
+
   main .wrap{padding-top:8px}
   #grid{display:grid;gap:16px;margin:16px 0 20px;grid-template-columns:repeat(auto-fill,minmax(360px,1fr))}
   .card{border:1px solid var(--border);border-radius:14px;background:var(--card);padding:12px;display:flex;flex-direction:column;gap:8px}
@@ -33,25 +56,25 @@
   .line input{flex:1}
   .footer{display:flex;gap:8px;align-items:center;justify-content:space-between}
   .link{font-size:12px;color:var(--muted);text-decoration:none;word-break:break-all}
-  .kbd{border:1px solid var(--border);border-bottom-width:2px;border-radius:6px;padding:2px 6px;font-family:ui-monospace,monospace}
-  [data-theme="dark"] .twitter-tweet-rendered{filter:brightness(0.92)}
   .placeholder{border:1px dashed var(--border);border-radius:12px;padding:10px;text-align:center;font-size:12px;color:var(--muted)}
-  .pagingbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end;margin-top:8px}
-  .pagingbar .muted{white-space:nowrap}
-  /* 모달 */
+  [data-theme="dark"] .twitter-tweet-rendered{filter:brightness(0.92)}
+
+  /* 모달 공통 */
   .modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.4);display:none;align-items:center;justify-content:center;z-index:50}
   .modal{background:var(--card);border:1px solid var(--border);border-radius:12px;max-width:560px;width:92%;padding:16px}
   .modal h2{margin:0 0 8px;font-size:16px}
   .modal .desc{font-size:12px;color:var(--muted);margin-bottom:8px}
   .modal .row{display:grid;grid-template-columns:1fr;gap:10px}
-  /* 태그 리스트 */
+
+  /* 태그 모달 리스트 */
   .tag-item{display:flex;align-items:center;justify-content:space-between;padding:8px 10px;border:1px solid var(--border);border-radius:10px;margin-bottom:8px;background:var(--card);cursor:pointer}
   .tag-item:hover{filter:brightness(1.03)}
   .tag-name{font-size:13px}
   .tag-count{font-size:12px;color:var(--muted)}
-  /* Mobile compact header */
+
+  /* 모바일 컴팩트 */
   @media (max-width: 640px) {
-    header .wrap { padding: 8px 12px; }
+    .wrap { padding: 8px 12px; }
     h1 { font-size: 16px; margin-bottom: 4px; }
     .row { gap: 10px; }
     .sub { font-size: 11px; }
@@ -59,13 +82,10 @@
     .controls { gap: 6px; }
     main .wrap { padding-top: 6px; }
   }
-  /* === Auto-hide header (collapsible height) === */
-  header.auto-hide{overflow:hidden;transition:max-height 180ms ease, border-color 180ms ease, background-color 180ms ease;max-height:var(--header-max,600px)}
-  header.auto-hide.hide{max-height:0;border-bottom-color:transparent}
-  @media (prefers-reduced-motion: reduce){ header.auto-hide{transition:none} }
 </style>
 </head>
 <body>
+
 <header>
   <div class="wrap">
     <h1>트윗 보관함 <span class="sub">배치 로드 / 무한스크롤(윈도우링) + 자동저장 + 동기화</span></h1>
@@ -134,7 +154,7 @@ https://x.com/someone/status/456... #정책 | 개인 메모"></textarea>
       </select>
     </div>
 
-    <!-- 예전 칩 바(숨김 처리됨) -->
+    <!-- (숨김) 예전 칩 바 -->
     <div id="tagChips" class="chips"></div>
   </div>
 </header>
@@ -176,9 +196,7 @@ https://x.com/someone/status/456... #정책 | 개인 메모"></textarea>
         <button id="tagNoneBtn">태그 없음</button>
         <button id="tagClearBtn">선택 해제</button>
       </div>
-      <div>
-        <button id="tagCloseBtn">닫기</button>
-      </div>
+      <div><button id="tagCloseBtn">닫기</button></div>
     </div>
   </div>
 </div>
@@ -214,17 +232,17 @@ const state={
   gistId: localStorage.getItem(CFG_GIST) || '',
   activeTag: null, // null|tag|UNTAGGED
   batch: +(localStorage.getItem(LS_BATCH) || 12),
-  offset: 0,          // 배치 로드/무한스크롤에서 현재까지 렌더된 개수
+  offset: 0,          // 지금까지 렌더한 개수
   mode: 'loadMore',   // 'loadMore' | 'infinite'
   ioLoad: null,       // 하단 로더
   MAX_MOUNTED: 30,    // 윈도우링 상한
   sortBy: localStorage.getItem(LS_SORT) || 'addedDesc'
 };
 
-/* ========== 테마 & 태그칩(숨김) ========== */
+/* ========== 테마 & (숨김) 칩 ========== */
 function applyTheme(){ document.documentElement.setAttribute('data-theme', state.theme); $('#darkToggle').checked = state.theme==='dark'; }
 function uniqueTags(){ const set=new Set(); state.items.forEach(it=>(it.tags||[]).forEach(t=>set.add(t))); return Array.from(set).sort((a,b)=>a.localeCompare(b)); }
-function renderTagChips(){ /* 칩 UI는 숨김이라 noop */ }
+function renderTagChips(){ /* 칩은 안 씀(모달 사용) */ }
 
 /* ========== 등록일 마이그레이션 ========== */
 function migrateAddedAt(){
@@ -233,7 +251,7 @@ function migrateAddedAt(){
   if(changed) saveLocal(state.items);
 }
 
-/* ========== 필터 & 정렬 & 목록 ========== */
+/* ========== 필터 & 정렬 ========== */
 function currentFiltered(){
   const q=($('#q')?.value||'').toLowerCase().trim();
   const active=state.activeTag;
@@ -339,7 +357,7 @@ async function embedQueue(cards, concurrency){
   });
 }
 
-/* ========== 렌더링 흐름 ========== */
+/* ========== 렌더 흐름 ========== */
 function updateCounters(){
   const total = sortItems(currentFiltered()).length;
   const shown = $('#grid').children.length;
@@ -348,7 +366,7 @@ function updateCounters(){
 }
 function resetDOMList(){ $('#grid').innerHTML=''; state.offset=0; updateCounters(); }
 
-/* 배치 추가 공통 */
+/* 배치 추가 */
 function appendBatch(filtered){
   const BATCH=state.batch;
   const slice=filtered.slice(state.offset, state.offset+BATCH);
@@ -361,7 +379,7 @@ function appendBatch(filtered){
   return slice.length;
 }
 
-/* 모드: 더 보기(배치) */
+/* 더 보기(배치) */
 async function onLoadMoreClick(){
   if(state.mode!=='loadMore') return;
   const filtered=sortItems(currentFiltered());
@@ -372,7 +390,7 @@ async function onLoadMoreClick(){
   await embedQueue(cards, c);
 }
 
-/* 모드: 무한스크롤(윈도우링) */
+/* 무한스크롤(윈도우링) */
 function setupInfiniteObserver(){
   if(state.ioLoad){ state.ioLoad.disconnect(); state.ioLoad=null; }
   state.ioLoad = new IntersectionObserver(async entries=>{
@@ -435,30 +453,43 @@ function updateTagFilterLabel(){
   else el.textContent=state.activeTag;
 }
 
-/* ========== 자동 접힘 헤더 ========== */
+/* ========== 자동 접힘 헤더(깜빡임 방지 완전 접힘) ========== */
 (function autoHideHeaderInit(){
   const header=document.querySelector('header'); if(!header) return;
   header.classList.add('auto-hide');
+
   function updateHeaderMaxHeight(){
-    const prev=header.style.maxHeight; header.style.maxHeight='none';
-    const h=header.scrollHeight; header.style.maxHeight=prev;
+    const prev=header.style.maxHeight;
+    header.style.maxHeight='none';
+    const h=header.scrollHeight;
+    header.style.maxHeight=prev;
     header.style.setProperty('--header-max', h+'px');
   }
-  updateHeaderMaxHeight();
-  const ro=new ResizeObserver(updateHeaderMaxHeight); ro.observe(header);
+  const ro=new ResizeObserver(updateHeaderMaxHeight);
+  ro.observe(header);
   window.addEventListener('resize', updateHeaderMaxHeight);
+  requestAnimationFrame(updateHeaderMaxHeight);
+  window.addEventListener('load', updateHeaderMaxHeight);
 
   let lastY=window.scrollY, ticking=false;
   const DOWN_DELTA=8, UP_DELTA=1, HIDE_START=120;
-  function modalOpen(){ const m=$('#tagModal'); const s=$('#modalWrap'); const v=(x)=>x&&getComputedStyle(x).display!=='none'; return v(m)||v(s); }
+
+  function anyModalOpen(){
+    const m1=$('#modalWrap'), m2=$('#tagModal');
+    const vis=el=>el && getComputedStyle(el).display!=='none';
+    return vis(m1)||vis(m2);
+  }
+  function showHeader(){ header.classList.remove('hide'); updateHeaderMaxHeight(); }
+  function hideHeader(){ header.classList.add('hide'); }
+
   function onScroll(){
     if(ticking) return; ticking=true;
     requestAnimationFrame(()=>{
       const y=window.scrollY, dy=y-lastY;
-      if(modalOpen()){ header.classList.remove('hide'); lastY=y; ticking=false; return; }
-      if(y<=0) header.classList.remove('hide');
-      else if(dy<-UP_DELTA) header.classList.remove('hide');
-      else if(dy>DOWN_DELTA && y>HIDE_START) header.classList.add('hide');
+      if(anyModalOpen()){ showHeader(); }
+      else if(y<=0){ showHeader(); }
+      else if(dy<-UP_DELTA){ showHeader(); }                 // 위로 1px만 올려도 펼침
+      else if(dy>DOWN_DELTA && y>HIDE_START){ hideHeader(); } // 충분히 내리면 접기
       lastY=y; ticking=false;
     });
   }
@@ -471,13 +502,13 @@ document.addEventListener('DOMContentLoaded', ()=>{
 
   // 테마
   applyTheme();
-  $('#darkToggle').addEventListener('change', e=>{ state.theme=e.target.checked?'dark':'light'; localStorage.setItem(LS_THEME,state.theme); applyTheme(); });
+  $('#darkToggle').addEventListener('change', e=>{ state.theme=e.target.checked?'dark':'light'; localStorage.setItem('theme',state.theme); applyTheme(); });
 
   // 배치 크기
   $('#batchSize').value=String(state.batch);
   $('#batchSize').addEventListener('change', e=>{ state.batch=+e.target.value; localStorage.setItem(LS_BATCH,String(state.batch)); resetAndRenderList(); });
 
-  // 모드 전환
+  // 모드
   $('#modeLoadMore').addEventListener('change',()=>{ state.mode='loadMore'; resetAndRenderList(); $('#loadMore').style.display='inline-block'; });
   $('#modeInfinite').addEventListener('change',()=>{ state.mode='infinite'; resetAndRenderList(); $('#loadMore').style.display='none'; });
 
@@ -512,7 +543,7 @@ document.addEventListener('DOMContentLoaded', ()=>{
   });
   $('#clearInput').addEventListener('click', ()=> $('#bulk').value='');
 
-  // 더 보기(배치 로드)
+  // 더 보기
   $('#loadMore').addEventListener('click', onLoadMoreClick);
 
   // 현재 표시분 임베드(수동 전체)
@@ -593,10 +624,9 @@ function resetAndRenderList(){
   $('#count').textContent=`총 ${filtered.length}개 · 0/${filtered.length}`;
   $('#count2').textContent=`총 ${filtered.length}개 · 0/${filtered.length}`;
   $('#pageInfo').textContent='';
-  // 모드별 초기 배치
   if(state.mode==='loadMore'){
     $('#loadMore').style.display='inline-block';
-    appendBatch(filtered); // 첫 배치만 뿌림
+    appendBatch(filtered); // 첫 배치만 표시(임베드는 필요 시 수동)
   } else {
     $('#loadMore').style.display='none';
     const added = appendBatch(filtered);

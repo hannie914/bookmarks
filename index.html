@@ -3,14 +3,14 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>트윗 보관함 — 배치 로드 & 무한스크롤(윈도우링)</title>
+<title>트윗 보관함 — 배치 로드 & 무한스크롤(윈도우링) + 자동접힘 헤더 + 태그모달 + 정렬</title>
 <script async src="https://platform.twitter.com/widgets.js"></script>
 <style>
   :root { --bg:#fff; --fg:#1b1f23; --muted:#6a737d; --card:#fff; --border:#eaecef; --chip:#f1f8ff; --chip-fg:#0366d6; --accent:#0366d6; }
   [data-theme="dark"] { --bg:#0d1117; --fg:#c9d1d9; --muted:#8b949e; --card:#161b22; --border:#30363d; --chip:#13233a; --chip-fg:#58a6ff; --accent:#58a6ff; }
   *{box-sizing:border-box}
   body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Apple SD Gothic Neo,Noto Sans KR,sans-serif;background:var(--bg);color:var(--fg)}
-  header{position:sticky;top:0;z-index:20;backdrop-filter:blur(8px);background:color-mix(in oklab,var(--bg) 92%,transparent);border-bottom:1px solid var(--border)}
+  header{position:sticky;top:0;z-index:20;background:color-mix(in oklab,var(--bg) 92%,transparent);border-bottom:1px solid var(--border);transition:background-color 180ms ease, box-shadow 180ms ease;}
   .wrap{max-width:1120px;margin:0 auto;padding:16px}
   .row{display:grid;grid-template-columns:2fr 1fr;gap:16px}
   @media (max-width:860px){.row{grid-template-columns:1fr}}
@@ -23,8 +23,8 @@
   .switch{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}
   .count{margin-left:auto}
   .chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
-  .chip{background:var(--chip);color:var(--chip-fg);border:1px solid var(--border);padding:6px 10px;border-radius:999px;font-size:12px;cursor:pointer}
-  .chip.active{outline:2px solid var(--chip-fg)}
+  /* 태그 칩 바는 숨김(이제 모달 사용) */
+  #tagChips { display:none !important; }
   main .wrap{padding-top:8px}
   #grid{display:grid;gap:16px;margin:16px 0 20px;grid-template-columns:repeat(auto-fill,minmax(360px,1fr))}
   .card{border:1px solid var(--border);border-radius:14px;background:var(--card);padding:12px;display:flex;flex-direction:column;gap:8px}
@@ -40,10 +40,15 @@
   .pagingbar .muted{white-space:nowrap}
   /* 모달 */
   .modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.4);display:none;align-items:center;justify-content:center;z-index:50}
-  .modal{background:var(--card);border:1px solid var(--border);border-radius:12px;max-width:520px;width:92%;padding:16px}
+  .modal{background:var(--card);border:1px solid var(--border);border-radius:12px;max-width:560px;width:92%;padding:16px}
   .modal h2{margin:0 0 8px;font-size:16px}
   .modal .desc{font-size:12px;color:var(--muted);margin-bottom:8px}
   .modal .row{display:grid;grid-template-columns:1fr;gap:10px}
+  /* 태그 리스트 */
+  .tag-item{display:flex;align-items:center;justify-content:space-between;padding:8px 10px;border:1px solid var(--border);border-radius:10px;margin-bottom:8px;background:var(--card);cursor:pointer}
+  .tag-item:hover{filter:brightness(1.03)}
+  .tag-name{font-size:13px}
+  .tag-count{font-size:12px;color:var(--muted)}
   /* Mobile compact header */
   @media (max-width: 640px) {
     header .wrap { padding: 8px 12px; }
@@ -52,9 +57,12 @@
     .sub { font-size: 11px; }
     textarea, input, select, button { padding: 8px 10px; border-radius: 8px; }
     .controls { gap: 6px; }
-    #tagChips { margin-top: 6px; }
     main .wrap { padding-top: 6px; }
   }
+  /* === Auto-hide header (collapsible height) === */
+  header.auto-hide{overflow:hidden;transition:max-height 180ms ease, border-color 180ms ease, background-color 180ms ease;max-height:var(--header-max,600px)}
+  header.auto-hide.hide{max-height:0;border-bottom-color:transparent}
+  @media (prefers-reduced-motion: reduce){ header.auto-hide{transition:none} }
 </style>
 </head>
 <body>
@@ -62,14 +70,10 @@
   <div class="wrap">
     <h1>트윗 보관함 <span class="sub">배치 로드 / 무한스크롤(윈도우링) + 자동저장 + 동기화</span></h1>
 
-    <!-- 모드/임베드 제어 줄 -->
+    <!-- 모드/임베드 제어 -->
     <div class="controls" style="margin:6px 0">
-      <label class="switch">
-        <input type="radio" name="mode" id="modeLoadMore" checked> 더 보기(배치 로드)
-      </label>
-      <label class="switch">
-        <input type="radio" name="mode" id="modeInfinite"> 무한 스크롤(윈도우링)
-      </label>
+      <label class="switch"><input type="radio" name="mode" id="modeLoadMore" checked> 더 보기(배치 로드)</label>
+      <label class="switch"><input type="radio" name="mode" id="modeInfinite"> 무한 스크롤(윈도우링)</label>
       <label class="switch">동시에
         <input id="embedConcurrency" type="number" min="1" max="8" value="4" style="width:56px;margin:0 6px">개 임베드
       </label>
@@ -78,7 +82,7 @@
     </div>
 
     <div class="row">
-      <!-- 좌측: 추가/도구 -->
+      <!-- 좌: 추가 -->
       <div>
         <div class="sub">한 줄에 하나씩 <b>트윗 URL</b>. 같은 줄에 <code>#태그</code>와 <code>| 메모</code> 가능. 아래 “공통 태그”는 이번 추가분 전체에 붙습니다.</div>
         <textarea id="bulk" placeholder="예)
@@ -92,7 +96,7 @@ https://x.com/someone/status/456... #정책 | 개인 메모"></textarea>
           <span class="sub">중복 URL은 자동 건너뜁니다.</span>
         </div>
       </div>
-      <!-- 우측: 검색/동기화/페이지 -->
+      <!-- 우: 검색/동기화/배치 -->
       <div>
         <div class="sub">검색( URL / #태그 / 메모 )</div>
         <input id="q" placeholder="#우주 또는 메모 단어 등" />
@@ -115,12 +119,22 @@ https://x.com/someone/status/456... #정책 | 개인 메모"></textarea>
           <button id="loadMore">더 보기</button>
           <span class="sub" id="pageInfo"></span>
         </div>
-        <div class="sub" style="margin-top:6px">
-          <span class="kbd">Tip</span> 태그 칩 클릭 → 해당 태그만 보기. <b>‘태그 없음’</b> 칩으로 무태그만 보기.
-        </div>
       </div>
     </div>
 
+    <!-- 태그 필터/정렬 -->
+    <div class="controls" id="filterRow" style="margin-top:6px">
+      <button id="tagFilterBtn">태그 필터</button>
+      <span class="sub" id="tagFilterLabel">전체</span>
+      <span class="count sub" id="count2" style="margin-left:auto"></span>
+      <label class="sub" style="margin-left:8px">정렬</label>
+      <select id="sortBy">
+        <option value="addedDesc" selected>최신 등록순</option>
+        <option value="addedAsc">오래된순</option>
+      </select>
+    </div>
+
+    <!-- 예전 칩 바(숨김 처리됨) -->
     <div id="tagChips" class="chips"></div>
   </div>
 </header>
@@ -128,12 +142,11 @@ https://x.com/someone/status/456... #정책 | 개인 메모"></textarea>
 <main>
   <div class="wrap">
     <div id="grid"></div>
-    <!-- 무한스크롤 센티넬 -->
     <div id="sentinel" style="height:1px"></div>
   </div>
 </main>
 
-<!-- 설정 모달 -->
+<!-- 동기화 모달 -->
 <div class="modal-backdrop" id="modalWrap" style="display:none">
   <div class="modal">
     <h2>동기화 설정</h2>
@@ -150,15 +163,36 @@ https://x.com/someone/status/456... #정책 | 개인 메모"></textarea>
   </div>
 </div>
 
+<!-- 태그 선택 모달 -->
+<div class="modal-backdrop" id="tagModal" style="display:none">
+  <div class="modal" style="max-width:560px">
+    <h2>태그 선택</h2>
+    <div class="desc">검색으로 태그를 좁혀보세요. 하나를 선택하면 필터가 적용됩니다.</div>
+    <input id="tagSearch" placeholder="태그 검색 (예: #우주)" />
+    <div id="tagList" style="max-height:320px; overflow:auto; margin-top:8px"></div>
+    <div class="controls" style="margin-top:10px; justify-content:space-between">
+      <div>
+        <button id="tagAllBtn">전체</button>
+        <button id="tagNoneBtn">태그 없음</button>
+        <button id="tagClearBtn">선택 해제</button>
+      </div>
+      <div>
+        <button id="tagCloseBtn">닫기</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script>
 /* ========== 유틸 & 상태 ========== */
 const $=(s,d=document)=>d.querySelector(s);
 const $$=(s,d=document)=>Array.from(d.querySelectorAll(s));
-const LS_KEY='tweet-shelf-v6';
+const LS_KEY='tweet-shelf-v7';
 const CFG_TOKEN='tweet-shelf-token';
 const CFG_GIST='tweet-shelf-gist';
 const LS_BATCH='tweet-shelf-batch';
 const LS_THEME='theme';
+const LS_SORT='tweet-shelf-sort';
 const UNTAGGED='__UNTAGGED__';
 
 const debounce=(fn,ms=600)=>{let t;return(...a)=>{clearTimeout(t);t=setTimeout(()=>fn(...a),ms)}};
@@ -183,22 +217,23 @@ const state={
   offset: 0,          // 배치 로드/무한스크롤에서 현재까지 렌더된 개수
   mode: 'loadMore',   // 'loadMore' | 'infinite'
   ioLoad: null,       // 하단 로더
-  ioWindow: null,     // 윈도우링
-  MAX_MOUNTED: 30     // 동시에 붙여둘 카드 상한(무한스크롤 윈도우링)
+  MAX_MOUNTED: 30,    // 윈도우링 상한
+  sortBy: localStorage.getItem(LS_SORT) || 'addedDesc'
 };
 
-/* ========== 테마 & 태그칩 ========== */
+/* ========== 테마 & 태그칩(숨김) ========== */
 function applyTheme(){ document.documentElement.setAttribute('data-theme', state.theme); $('#darkToggle').checked = state.theme==='dark'; }
 function uniqueTags(){ const set=new Set(); state.items.forEach(it=>(it.tags||[]).forEach(t=>set.add(t))); return Array.from(set).sort((a,b)=>a.localeCompare(b)); }
-function renderTagChips(){
-  const box=$('#tagChips'); box.innerHTML='';
-  const mk=(label,active,click)=>{const b=document.createElement('button'); b.className='chip'+(active?' active':''); b.textContent=label; b.addEventListener('click',click); box.appendChild(b);};
-  mk('전체', !state.activeTag, ()=>{state.activeTag=null; resetAndRenderList();});
-  mk('태그 없음', state.activeTag===UNTAGGED, ()=>{state.activeTag=(state.activeTag===UNTAGGED?null:UNTAGGED); resetAndRenderList();});
-  uniqueTags().forEach(tag=> mk(tag, state.activeTag===tag, ()=>{state.activeTag=(state.activeTag===tag?null:tag); resetAndRenderList();}));
+function renderTagChips(){ /* 칩 UI는 숨김이라 noop */ }
+
+/* ========== 등록일 마이그레이션 ========== */
+function migrateAddedAt(){
+  const now=Date.now(); let changed=false;
+  state.items.forEach((it,i)=>{ if(typeof it.addedAt!=='number'){ it.addedAt=now-i; changed=true; } });
+  if(changed) saveLocal(state.items);
 }
 
-/* ========== 필터 & 목록 ========== */
+/* ========== 필터 & 정렬 & 목록 ========== */
 function currentFiltered(){
   const q=($('#q')?.value||'').toLowerCase().trim();
   const active=state.activeTag;
@@ -213,7 +248,14 @@ function currentFiltered(){
     return qok && tok;
   });
 }
+function sortItems(arr){
+  const by=state.sortBy;
+  if(by==='addedDesc') return arr.slice().sort((a,b)=>(b.addedAt||0)-(a.addedAt||0));
+  if(by==='addedAsc')  return arr.slice().sort((a,b)=>(a.addedAt||0)-(b.addedAt||0));
+  return arr;
+}
 
+/* ========== 카드 ========== */
 function cardHTML(item){
   const tagText=(item.tags||[]).join(' ');
   const placeholder = `<div class="placeholder">임베드 안 함 · [보기]로 표시</div>`;
@@ -231,47 +273,34 @@ function cardHTML(item){
       </div>
       <div class="footer">
         <a class="link" href="${item.url}" target="_blank" rel="noopener">${item.url}</a>
-        <div class="actions">
-          <button class="del">삭제</button>
-        </div>
+        <div class="actions"><button class="del">삭제</button></div>
       </div>
     </article>`;
 }
-
 function bindCardEvents(cards){
   cards.forEach(item=>{
-    const card = document.querySelector(`.card[data-id="${CSS.escape(item.url)}"]`);
+    const card=document.querySelector(`.card[data-id="${CSS.escape(item.url)}"]`);
     if(!card) return;
-    // 보기(한 장 임베드)
+    // 보기
     card.querySelector('.view').addEventListener('click', ()=> ensureEmbed(card));
     // 삭제
     card.querySelector('.del').addEventListener('click', ()=>{
       const idx=state.items.findIndex(x=>x.url===item.url);
       if(idx===-1) return;
       if(!confirm('이 카드를 삭제할까요?')) return;
-      state.items.splice(idx,1);
-      saveLocal(state.items);
-      // DOM에서 제거
-      card.remove();
-      // 카운트 갱신 & 목록 재구성(필요시)
-      updateCounters();
+      state.items.splice(idx,1); saveLocal(state.items);
+      card.remove(); updateCounters();
     });
-    // 자동저장(디바운스)
+    // 자동저장
     const tagsInput=card.querySelector('.tags');
     const noteInput=card.querySelector('.note');
     const doSave=debounce(()=>{
-      const idx=state.items.findIndex(x=>x.url===item.url);
-      if(idx===-1) return;
-      const tags=tagsInput.value.trim().split(/\s+/).filter(Boolean)
-                     .map(s=>s.startsWith('#')?s.toLowerCase():'#'+s.toLowerCase());
+      const idx=state.items.findIndex(x=>x.url===item.url); if(idx===-1) return;
+      const tags=tagsInput.value.trim().split(/\s+/).filter(Boolean).map(s=>s.startsWith('#')?s.toLowerCase():'#'+s.toLowerCase());
       const note=noteInput.value.trim();
-      state.items[idx].tags=tags;
-      state.items[idx].note=note;
-      saveLocal(state.items);
-      // 상단 메타 갱신
+      state.items[idx].tags=tags; state.items[idx].note=note; saveLocal(state.items);
       card.dataset.tags=tags.join(' '); card.dataset.note=note;
       card.querySelector('.meta').innerHTML=`<span>${card.dataset.tags || '태그 없음'}</span>${note?`<span>· ${note}</span>`:''}`;
-      renderTagChips(); // 칩도 갱신 필요
     }, 600);
     tagsInput.addEventListener('input', doSave);
     noteInput.addEventListener('input', doSave);
@@ -282,14 +311,11 @@ function bindCardEvents(cards){
 function tweetIdFromUrl(url){ const m=url.match(/status\/(\d+)/); return m?m[1]:null; }
 function ensureEmbed(card){
   if(card.dataset.embedded==='1') return;
-  const url=card.dataset.url;
-  const id=tweetIdFromUrl(url);
-  const mount=card.querySelector('.embed');
+  const url=card.dataset.url; const id=tweetIdFromUrl(url); const mount=card.querySelector('.embed');
   if(!mount) return;
   mount.innerHTML='';
   if(window.twttr && window.twttr.widgets && id){
-    window.twttr.widgets.createTweet(id, mount);
-    card.dataset.embedded='1';
+    window.twttr.widgets.createTweet(id, mount); card.dataset.embedded='1';
   } else {
     mount.innerHTML=`<blockquote class="twitter-tweet"><a href="${url}"></a></blockquote>`;
     if(window.twttr&&window.twttr.widgets) window.twttr.widgets.load(mount);
@@ -297,8 +323,7 @@ function ensureEmbed(card){
   }
 }
 async function embedQueue(cards, concurrency){
-  const total=cards.length; let done=0, running=0, index=0;
-  const statusEl=$('#embedStatus');
+  const total=cards.length; let done=0, running=0, index=0; const statusEl=$('#embedStatus');
   const upd=()=>{ if(statusEl) statusEl.textContent= total ? `임베드 진행: ${done}/${total}` : ''; };
   upd();
   return new Promise(resolve=>{
@@ -316,15 +341,12 @@ async function embedQueue(cards, concurrency){
 
 /* ========== 렌더링 흐름 ========== */
 function updateCounters(){
-  const total = currentFiltered().length;
+  const total = sortItems(currentFiltered()).length;
   const shown = $('#grid').children.length;
   $('#count').textContent = `총 ${total}개 · ${shown}/${total}`;
+  $('#count2').textContent = `총 ${total}개 · ${shown}/${total}`;
 }
-function resetDOMList(){
-  $('#grid').innerHTML='';
-  state.offset=0;
-  updateCounters();
-}
+function resetDOMList(){ $('#grid').innerHTML=''; state.offset=0; updateCounters(); }
 
 /* 배치 추가 공통 */
 function appendBatch(filtered){
@@ -342,73 +364,135 @@ function appendBatch(filtered){
 /* 모드: 더 보기(배치) */
 async function onLoadMoreClick(){
   if(state.mode!=='loadMore') return;
-  const filtered=currentFiltered();
+  const filtered=sortItems(currentFiltered());
   const added = appendBatch(filtered);
   if(!added){ $('#pageInfo').textContent='끝까지 표시되었습니다.'; return; }
-  // 새로 추가된 카드들 임베드 큐
   const cards = Array.from(document.querySelectorAll('.card')).slice(-added);
   const c = Math.max(1, Math.min(8, +$('#embedConcurrency').value || 4));
   await embedQueue(cards, c);
 }
 
 /* 모드: 무한스크롤(윈도우링) */
-function setupInfiniteObservers(){
-  // 하단 로더
+function setupInfiniteObserver(){
   if(state.ioLoad){ state.ioLoad.disconnect(); state.ioLoad=null; }
   state.ioLoad = new IntersectionObserver(async entries=>{
     if(!entries[0].isIntersecting) return;
     if(state.mode!=='infinite') return;
-    const filtered=currentFiltered();
+    const filtered=sortItems(currentFiltered());
     const added = appendBatch(filtered);
     if(added){
       const newCards = Array.from(document.querySelectorAll('.card')).slice(-added);
       const c = Math.max(1, Math.min(8, +$('#embedConcurrency').value || 4));
       await embedQueue(newCards, c);
-      windowingTrim(); // 초과분 제거
+      windowingTrim();
     }
   }, {root:null, rootMargin:'200px'});
   state.ioLoad.observe($('#sentinel'));
-
-  // 윈도우링: 너무 많은 카드가 붙으면 위쪽부터 임베드 제거
-  if(state.ioWindow){ state.ioWindow.disconnect(); state.ioWindow=null; }
-  // 여기서는 별도 IO 없이 windowingTrim을 배치마다 호출
 }
 function windowingTrim(){
   const cards = Array.from(document.querySelectorAll('.card'));
   if(cards.length <= state.MAX_MOUNTED) return;
   const removeCount = cards.length - state.MAX_MOUNTED;
   for(let i=0;i<removeCount;i++){
-    const card=cards[i];
-    const mount=card.querySelector('.embed');
+    const card=cards[i]; const mount=card.querySelector('.embed');
     if(mount){ mount.innerHTML='<div class="placeholder">임베드 해제됨</div>'; }
     card.dataset.embedded='0';
   }
 }
 
+/* ========== 태그 모달 ========== */
+function openTagModal(){
+  const modal=$('#tagModal'), listWrap=$('#tagList'), search=$('#tagSearch');
+  if(!modal||!listWrap||!search) return;
+  const counts=new Map(); state.items.forEach(it=>(it.tags||[]).forEach(t=>counts.set(t,(counts.get(t)||0)+1)));
+  const tags=Array.from(counts.entries()).sort((a,b)=>a[0].localeCompare(b[0]));
+
+  function renderList(text=''){
+    const f=text.toLowerCase().trim(); listWrap.innerHTML='';
+    tags.forEach(([name,count])=>{
+      if(f && !name.toLowerCase().includes(f)) return;
+      const row=document.createElement('div'); row.className='tag-item';
+      row.innerHTML=`<span class="tag-name">${name}</span><span class="tag-count">${count}개</span>`;
+      row.addEventListener('click', ()=>{
+        state.activeTag=name; updateTagFilterLabel(); close(); resetAndRenderList();
+      });
+      listWrap.appendChild(row);
+    });
+  }
+  function close(){ modal.style.display='none'; }
+  search.value=''; renderList(''); modal.style.display='flex';
+  search.oninput=(e)=>renderList(e.target.value);
+  $('#tagAllBtn').onclick=()=>{ state.activeTag=null; updateTagFilterLabel(); close(); resetAndRenderList(); };
+  $('#tagNoneBtn').onclick=()=>{ state.activeTag=UNTAGGED; updateTagFilterLabel(); close(); resetAndRenderList(); };
+  $('#tagClearBtn').onclick=()=>{ state.activeTag=null; updateTagFilterLabel(); close(); resetAndRenderList(); };
+  $('#tagCloseBtn').onclick=close;
+  modal.addEventListener('click',(e)=>{ if(e.target && e.target.id==='tagModal') close(); });
+}
+function updateTagFilterLabel(){
+  const el=$('#tagFilterLabel'); if(!el) return;
+  if(state.activeTag===UNTAGGED) el.textContent='태그 없음';
+  else if(!state.activeTag) el.textContent='전체';
+  else el.textContent=state.activeTag;
+}
+
+/* ========== 자동 접힘 헤더 ========== */
+(function autoHideHeaderInit(){
+  const header=document.querySelector('header'); if(!header) return;
+  header.classList.add('auto-hide');
+  function updateHeaderMaxHeight(){
+    const prev=header.style.maxHeight; header.style.maxHeight='none';
+    const h=header.scrollHeight; header.style.maxHeight=prev;
+    header.style.setProperty('--header-max', h+'px');
+  }
+  updateHeaderMaxHeight();
+  const ro=new ResizeObserver(updateHeaderMaxHeight); ro.observe(header);
+  window.addEventListener('resize', updateHeaderMaxHeight);
+
+  let lastY=window.scrollY, ticking=false;
+  const DOWN_DELTA=8, UP_DELTA=1, HIDE_START=120;
+  function modalOpen(){ const m=$('#tagModal'); const s=$('#modalWrap'); const v=(x)=>x&&getComputedStyle(x).display!=='none'; return v(m)||v(s); }
+  function onScroll(){
+    if(ticking) return; ticking=true;
+    requestAnimationFrame(()=>{
+      const y=window.scrollY, dy=y-lastY;
+      if(modalOpen()){ header.classList.remove('hide'); lastY=y; ticking=false; return; }
+      if(y<=0) header.classList.remove('hide');
+      else if(dy<-UP_DELTA) header.classList.remove('hide');
+      else if(dy>DOWN_DELTA && y>HIDE_START) header.classList.add('hide');
+      lastY=y; ticking=false;
+    });
+  }
+  window.addEventListener('scroll', onScroll, {passive:true});
+})();
+
 /* ========== 초기화 & 이벤트 ========== */
 document.addEventListener('DOMContentLoaded', ()=>{
+  migrateAddedAt();
+
   // 테마
   applyTheme();
-  $('#darkToggle').addEventListener('change', e=>{ state.theme=e.target.checked?'dark':'light'; localStorage.setItem('theme', state.theme); applyTheme(); });
+  $('#darkToggle').addEventListener('change', e=>{ state.theme=e.target.checked?'dark':'light'; localStorage.setItem(LS_THEME,state.theme); applyTheme(); });
 
   // 배치 크기
   $('#batchSize').value=String(state.batch);
-  $('#batchSize').addEventListener('change', e=>{ state.batch=+e.target.value; localStorage.setItem(LS_BATCH, String(state.batch)); resetAndRenderList(); });
+  $('#batchSize').addEventListener('change', e=>{ state.batch=+e.target.value; localStorage.setItem(LS_BATCH,String(state.batch)); resetAndRenderList(); });
 
   // 모드 전환
-  $('#modeLoadMore').addEventListener('change',()=>{
-    state.mode='loadMore'; resetAndRenderList();
-    $('#loadMore').style.display='inline-block';
-  });
-  $('#modeInfinite').addEventListener('change',()=>{
-    state.mode='infinite'; resetAndRenderList();
-    $('#loadMore').style.display='none';
-  });
+  $('#modeLoadMore').addEventListener('change',()=>{ state.mode='loadMore'; resetAndRenderList(); $('#loadMore').style.display='inline-block'; });
+  $('#modeInfinite').addEventListener('change',()=>{ state.mode='infinite'; resetAndRenderList(); $('#loadMore').style.display='none'; });
 
-  // 검색/태그 변화 → 목록 리셋
+  // 검색
   $('#q').addEventListener('input', ()=> resetAndRenderList());
 
-  // 가져오기(공통 태그 병합)
+  // 정렬
+  $('#sortBy').value = state.sortBy;
+  $('#sortBy').addEventListener('change', (e)=>{ state.sortBy=e.target.value; localStorage.setItem(LS_SORT,state.sortBy); resetAndRenderList(); });
+
+  // 태그 모달
+  $('#tagFilterBtn').addEventListener('click', openTagModal);
+  updateTagFilterLabel();
+
+  // 가져오기(공통 태그 병합 + addedAt)
   $('#importBtn').addEventListener('click', ()=>{
     const lines=$('#bulk').value.split('\n').map(s=>s.trim()).filter(Boolean);
     const common=($('#commonTags').value||'').trim().split(/\s+/).filter(Boolean).map(t=>t.startsWith('#')?t.toLowerCase():'#'+t.toLowerCase());
@@ -416,6 +500,7 @@ document.addEventListener('DOMContentLoaded', ()=>{
     for(const line of lines){
       const p=parseLine(line); if(!p) continue;
       if(state.items.some(x=>x.url===p.url)) continue;
+      p.addedAt=Date.now();
       if(common.length) p.tags=[...new Set([...(p.tags||[]), ...common])];
       newOnes.push(p);
     }
@@ -449,7 +534,12 @@ document.addEventListener('DOMContentLoaded', ()=>{
     r.onload=()=>{
       try{
         const arr=JSON.parse(r.result); if(!Array.isArray(arr)) throw new Error();
-        const cleaned=arr.filter(x=>x && typeof x.url==='string').map(x=>({ url:normalize(x.url), tags:Array.isArray(x.tags)?x.tags.map(t=>t.toLowerCase()):[], note: typeof x.note==='string'?x.note:'' }));
+        const cleaned=arr.filter(x=>x && typeof x.url==='string').map(x=>({
+          url:normalize(x.url),
+          tags:Array.isArray(x.tags)?x.tags.map(t=>t.toLowerCase()):[],
+          note: typeof x.note==='string'?x.note:'',
+          addedAt: typeof x.addedAt==='number' ? x.addedAt : Date.now()
+        }));
         state.items=cleaned; saveLocal(state.items); resetAndRenderList();
       }catch{ alert('JSON 형식이 올바르지 않습니다.'); }
     };
@@ -467,7 +557,10 @@ document.addEventListener('DOMContentLoaded', ()=>{
     try{
       const arr=JSON.parse(file.content); if(!Array.isArray(arr)) throw new Error();
       const map=new Map();
-      arr.forEach(x=>map.set(x.url,{url:normalize(x.url),tags:(x.tags||[]).map(t=>t.toLowerCase()),note:x.note||''}));
+      arr.forEach(x=>{
+        const item={ url:normalize(x.url), tags:(x.tags||[]).map(t=>t.toLowerCase()), note:x.note||'', addedAt: typeof x.addedAt==='number'?x.addedAt:Date.now() };
+        map.set(item.url,item);
+      });
       state.items.forEach(x=>{ if(!map.has(x.url)) map.set(x.url,x); });
       state.items=Array.from(map.values());
       saveLocal(state.items);
@@ -485,19 +578,10 @@ document.addEventListener('DOMContentLoaded', ()=>{
   $('#cloudPull').addEventListener('click', cloudPull);
   $('#cloudPush').addEventListener('click', cloudPush);
 
-  // 모달
-  function openSettings(){ $('#tokenInput').value=state.token||''; $('#gistInput').value=state.gistId||''; $('#settingsStatus').textContent=''; $('#modalWrap').style.display='flex'; }
-  function closeSettings(){ $('#modalWrap').style.display='none'; }
-  function saveSettings(){ state.token=$('#tokenInput').value.trim(); state.gistId=$('#gistInput').value.trim(); localStorage.setItem(CFG_TOKEN,state.token); localStorage.setItem(CFG_GIST,state.gistId); $('#settingsStatus').textContent='저장됨'; setTimeout(closeSettings,300); }
-  $('#syncSettings').addEventListener('click', openSettings);
-  $('#closeSettings').addEventListener('click', closeSettings);
-  $('#saveSettings').addEventListener('click', saveSettings);
-  document.addEventListener('click',(e)=>{ if(e.target && e.target.id==='modalWrap') closeSettings(); });
-
-  // 태그칩 렌더 & 초기 목록 로드
+  // 초기 로드
   renderTagChips();
   resetAndRenderList();
-  setupInfiniteObservers(); // 무한스크롤 모드 대비 미리 연결
+  setupInfiniteObserver(); // 무한스크롤 대비
 });
 
 /* 목록 리셋 후 첫 배치(모드별) */
@@ -505,17 +589,16 @@ function resetAndRenderList(){
   $('#grid').innerHTML='';
   state.offset=0;
   $('#embedStatus').textContent='';
-  const filtered=currentFiltered();
+  const filtered=sortItems(currentFiltered());
   $('#count').textContent=`총 ${filtered.length}개 · 0/${filtered.length}`;
+  $('#count2').textContent=`총 ${filtered.length}개 · 0/${filtered.length}`;
   $('#pageInfo').textContent='';
-  renderTagChips();
-
+  // 모드별 초기 배치
   if(state.mode==='loadMore'){
     $('#loadMore').style.display='inline-block';
-    appendBatch(filtered); // 첫 배치만 뿌림(임베드는 수동으로 embedAll 누르거나 Load More 직후 큐 사용)
+    appendBatch(filtered); // 첫 배치만 뿌림
   } else {
     $('#loadMore').style.display='none';
-    // 무한스크롤은 첫 배치를 자동 추가하고 임베드
     const added = appendBatch(filtered);
     if(added){
       const newCards = Array.from(document.querySelectorAll('.card')).slice(-added);
